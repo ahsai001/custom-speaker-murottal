@@ -140,10 +140,10 @@ void taskKeepWiFiAlive(void * parameter){
             delay(10000);
             continue;
         }
-
+        vTaskSuspend(taskWebHandle);
         Serial.println("[WIFI] Connecting");
         WiFi.mode(WIFI_STA);
-        WiFi.begin(ssid, password);
+        WiFi.begin(ssid, password); 
 
         unsigned long startAttemptTime = millis();
 
@@ -165,8 +165,10 @@ void taskKeepWiFiAlive(void * parameter){
         Serial.println(WiFi.localIP());
 
         if (MDNS.begin("esp32")) {
-          Serial.println("MDNS responder started");
+            Serial.println("MDNS responder started");
         }
+
+        vTaskResume(taskWebHandle);
     }
 }
 
@@ -303,9 +305,9 @@ void taskWebServer(void * parameter){
   server.begin();
   Serial.println("HTTP server started");
       
-  // for(;;){
-  //    handleServerClient();
-  // }
+  for(;;){
+     handleServerClient();
+  }
 }
 
 
@@ -326,36 +328,37 @@ void setup() {
 
   
 
-  xTaskCreate(
-    taskDMD,    // Function that should be called
-    "Display DMD",   // Name of the task (for debugging)
-    1000,            // Stack size (bytes)
-    NULL,            // Parameter to pass
-    1,               // Task priority
-    &taskDMDHandle             // Task handle
-  );
+  // xTaskCreate(
+  //   taskDMD,    // Function that should be called
+  //   "Display DMD",   // Name of the task (for debugging)
+  //   5000,            // Stack size (bytes)
+  //   NULL,            // Parameter to pass
+  //   1,               // Task priority
+  //   &taskDMDHandle             // Task handle
+  // );
 
 
 
-  xTaskCreate(
+  xTaskCreatePinnedToCore(
     taskKeepWiFiAlive,    // Function that should be called
     "Keep WiFi Alive",   // Name of the task (for debugging)
-    1000,            // Stack size (bytes)
+    5000,            // Stack size (bytes)
     NULL,            // Parameter to pass
     1,               // Task priority
-    &taskKeepWiFiHandle             // Task handle
+    &taskKeepWiFiHandle,             // Task handle
+	  CONFIG_ARDUINO_RUNNING_CORE      
   );
 
   //task 2
-  // xTaskCreate(
-  //   taskWebServer,    // Function that should be called
-  //   "Web Server",   // Name of the task (for debugging)
-  //   1000,            // Stack size (bytes)
-  //   NULL,            // Parameter to pass
-  //   1,               // Task priority
-  //   &taskWebHandle             // Task handle
-  // );
-  //int x;
+  xTaskCreate(
+    taskWebServer,    // Function that should be called
+    "Web Server",   // Name of the task (for debugging)
+    5000,            // Stack size (bytes)
+    NULL,            // Parameter to pass
+    1,               // Task priority
+    &taskWebHandle         // Task handle
+  );
+  //int x = 0;
   //taskWebServer(&x);
 }
 
