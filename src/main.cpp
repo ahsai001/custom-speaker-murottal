@@ -16,10 +16,10 @@ const char * ssid = "3mbd3vk1d-2";
 const char * password = "marsupiarmadomah3716";
 
 //section code : DMD, toggle led, web server
-TaskHandle_t taskLEDHandle = NULL;
-TaskHandle_t taskWebHandle = NULL;
-TaskHandle_t taskKeepWiFiHandle = NULL;
-TaskHandle_t taskDMDHandle = NULL;
+TaskHandle_t taskLEDHandle;
+TaskHandle_t taskWebHandle;
+TaskHandle_t taskKeepWiFiHandle;
+TaskHandle_t taskDMDHandle;
 
 #define DISPLAYS_ACROSS 2
 #define DISPLAYS_DOWN 1
@@ -37,7 +37,7 @@ void IRAM_ATTR triggerScan()
 void taskDMD(void * parameter){
    uint8_t cpuClock = ESP.getCpuFreqMHz();
    timer = timerBegin(0, cpuClock, true);
-   timerAttachInterrupt(timer, &triggerScan, true);
+   timerAttachInterrupt(timer, &triggerScan, false);
    timerAlarmWrite(timer, 300, true);
    timerAlarmEnable(timer);
    dmd.clearScreen( true );   //true is normal (all pixels off), false is negative (all pixels on)
@@ -49,7 +49,7 @@ void taskDMD(void * parameter){
 
    for(;;){
       byte b;
-   
+      Serial.println("DMD is coming");
       // 10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
       dmd.clearScreen( true );
       dmd.selectFont(Arial_Black_16);
@@ -140,7 +140,10 @@ void taskKeepWiFiAlive(void * parameter){
             delay(10000);
             continue;
         }
+
+        vTaskSuspend(taskDMDHandle);
         vTaskSuspend(taskWebHandle);
+        
         Serial.println("[WIFI] Connecting");
         WiFi.mode(WIFI_STA);
         WiFi.begin(ssid, password); 
@@ -168,6 +171,7 @@ void taskKeepWiFiAlive(void * parameter){
             Serial.println("MDNS responder started");
         }
 
+        vTaskResume(taskDMDHandle);
         vTaskResume(taskWebHandle);
     }
 }
@@ -317,25 +321,15 @@ void setup() {
   Serial.begin(115200);
   
   //task 1
-  xTaskCreate(
+  xTaskCreatePinnedToCore(
     taskToggleLED,    // Function that should be called
     "Toggle LED",   // Name of the task (for debugging)
     1000,            // Stack size (bytes)
     NULL,            // Parameter to pass
     1,               // Task priority
-    &taskLEDHandle             // Task handle
+    &taskLEDHandle,             // Task handle
+    CONFIG_ARDUINO_RUNNING_CORE
   );
-
-  
-
-  // xTaskCreate(
-  //   taskDMD,    // Function that should be called
-  //   "Display DMD",   // Name of the task (for debugging)
-  //   5000,            // Stack size (bytes)
-  //   NULL,            // Parameter to pass
-  //   1,               // Task priority
-  //   &taskDMDHandle             // Task handle
-  // );
 
 
 
@@ -348,20 +342,30 @@ void setup() {
     &taskKeepWiFiHandle,             // Task handle
 	  CONFIG_ARDUINO_RUNNING_CORE      
   );
+  
+
+  xTaskCreatePinnedToCore(
+    taskDMD,    // Function that should be called
+    "Display DMD",   // Name of the task (for debugging)
+    5000,            // Stack size (bytes)
+    NULL,            // Parameter to pass
+    1,               // Task priority
+    &taskDMDHandle,             // Task handle
+    CONFIG_ARDUINO_RUNNING_CORE
+  );
+
 
   //task 2
-  xTaskCreate(
+  xTaskCreatePinnedToCore(
     taskWebServer,    // Function that should be called
     "Web Server",   // Name of the task (for debugging)
     5000,            // Stack size (bytes)
     NULL,            // Parameter to pass
     1,               // Task priority
-    &taskWebHandle         // Task handle
+    &taskWebHandle,         // Task handle
+    CONFIG_ARDUINO_RUNNING_CORE
   );
-  //int x = 0;
-  //taskWebServer(&x);
 }
 
 void loop() {
-  //handleServerClient();
 }
