@@ -8,14 +8,14 @@
 #include <WiFiClient.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
-#include <DMD32.h>        //
+#include <DMD32.h>
 #include "fonts/SystemFont5x7.h"
 #include "fonts/Arial_black_16.h"
 
 const char * ssid = "3mbd3vk1d-2";
 const char * password = "marsupiarmadomah3716";
 
-//section code : DMD, toggle led, web server
+//section code : DMD, toggle led, wifi alive, web server
 TaskHandle_t taskLEDHandle;
 TaskHandle_t taskWebHandle;
 TaskHandle_t taskKeepWiFiHandle;
@@ -34,7 +34,7 @@ void IRAM_ATTR triggerScan()
   dmd.scanDisplayBySPI();
 }
 
-void taskDMD(void * parameter){
+void setupDMD(){
    uint8_t cpuClock = ESP.getCpuFreqMHz();
    timer = timerBegin(0, cpuClock, true);
    timerAttachInterrupt(timer, &triggerScan, false);
@@ -42,14 +42,17 @@ void taskDMD(void * parameter){
    timerAlarmEnable(timer);
    dmd.clearScreen( true );   //true is normal (all pixels off), false is negative (all pixels on)
 
-    //control brightness DMD
+   //control brightness DMD
    ledcSetup(0, 5000, 8);
    ledcAttachPin(4, 0);
-   ledcWrite(0, 30);
+   ledcWrite(0, 20);
+}
 
-   for(;;){
+void taskDMD(void * parameter){
+  setupDMD();
+  for(;;){
       byte b;
-      Serial.println("DMD is coming");
+      //Serial.println("DMD is coming");
       // 10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
       dmd.clearScreen( true );
       dmd.selectFont(Arial_Black_16);
@@ -68,7 +71,7 @@ void taskDMD(void * parameter){
       dmd.drawChar( 15,  3, ':', GRAPHICS_OR     );   // clock colon overlay on
       delay( 1000 );
 
-      dmd.drawMarquee(scrollingText.c_str(),14,(32*DISPLAYS_ACROSS)-1,0);
+      dmd.drawMarquee(scrollingText.c_str(),scrollingText.length(),(32*DISPLAYS_ACROSS)-1,0);
       long start=millis();
       long timer=start;
       boolean ret=false;
@@ -128,7 +131,21 @@ void taskDMD(void * parameter){
           delay( 200 );      
       }
       delay( 200 );  
-   }
+  }
+}
+
+const uint8_t built_in_led = 2;
+const uint8_t relay = 26;
+uint32_t led_on_delay = 500;
+uint32_t led_off_delay = 500;
+
+void taskToggleLED(void * parameter){
+  for(;;){
+    digitalWrite(built_in_led, HIGH);
+    delay(led_on_delay);
+    digitalWrite(built_in_led, LOW);
+    delay(led_off_delay);
+  }
 }
 
 #define WIFI_TIMEOUT_MS 20000 // 20 second WiFi connection timeout
@@ -141,10 +158,16 @@ void taskKeepWiFiAlive(void * parameter){
             continue;
         }
 
-        vTaskSuspend(taskDMDHandle);
-        vTaskSuspend(taskWebHandle);
+        xTaskCreate(
+          taskToggleLED,    // Function that should be called
+          "Toggle LED",   // Name of the task (for debugging)
+          1000,            // Stack size (bytes)
+          NULL,            // Parameter to pass
+          1,               // Task priority
+          &taskLEDHandle            // Task handle
+        );
         
-        Serial.println("[WIFI] Connecting");
+        //Serial.println("[WIFI] Connecting");
         WiFi.mode(WIFI_STA);
         WiFi.begin(ssid, password); 
 
@@ -157,36 +180,26 @@ void taskKeepWiFiAlive(void * parameter){
         // When we couldn't make a WiFi connection (or the timeout expired)
 		  // sleep for a while and then retry.
         if(WiFi.status() != WL_CONNECTED){
-            Serial.println("[WIFI] FAILED");
+            //Serial.println("[WIFI] FAILED");
             delay(WIFI_RECOVER_TIME_MS);
 			      continue;
         }
 
-        Serial.print("Connected to ");
-        Serial.println(ssid);
-        Serial.print("IP address: ");
-        Serial.println(WiFi.localIP());
+        //Serial.print("Connected to ");
+        //Serial.println(ssid);
+        //Serial.print("IP address: ");
+        //Serial.println(WiFi.localIP());
 
         if (MDNS.begin("esp32")) {
-            Serial.println("MDNS responder started");
+            //Serial.println("MDNS responder started");
         }
 
-        vTaskResume(taskDMDHandle);
-        vTaskResume(taskWebHandle);
+        vTaskDelete(taskLEDHandle);
+        digitalWrite(built_in_led,HIGH);
+        
     }
 }
 
-const uint8_t built_in_led = 2;
-const uint8_t relay = 26;
-
-void taskToggleLED(void * parameter){
-  for(;;){
-    digitalWrite(built_in_led, HIGH);
-    delay(1000);
-    digitalWrite(built_in_led, LOW);
-    delay(1000);
-  }
-}
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
@@ -265,7 +278,7 @@ void handleWebNotFound() {
 
 void handleServerClient(){
     server.handleClient();
-    delay(200);
+    delay(1000);
 }
 
 void taskWebServer(void * parameter){
@@ -307,7 +320,7 @@ void taskWebServer(void * parameter){
   server.onNotFound(handleWebNotFound);
 
   server.begin();
-  Serial.println("HTTP server started");
+  //Serial.println("HTTP server started");
       
   for(;;){
      handleServerClient();
@@ -319,31 +332,18 @@ void taskWebServer(void * parameter){
 void setup() {
   pinMode(built_in_led, OUTPUT);
   Serial.begin(115200);
+
   
-  //task 1
-  xTaskCreatePinnedToCore(
-    taskToggleLED,    // Function that should be called
-    "Toggle LED",   // Name of the task (for debugging)
-    1000,            // Stack size (bytes)
-    NULL,            // Parameter to pass
-    1,               // Task priority
-    &taskLEDHandle,             // Task handle
-    CONFIG_ARDUINO_RUNNING_CORE
-  );
-
-
-
-  xTaskCreatePinnedToCore(
+  xTaskCreate(
     taskKeepWiFiAlive,    // Function that should be called
     "Keep WiFi Alive",   // Name of the task (for debugging)
     5000,            // Stack size (bytes)
     NULL,            // Parameter to pass
     1,               // Task priority
-    &taskKeepWiFiHandle,             // Task handle
-	  CONFIG_ARDUINO_RUNNING_CORE      
+    &taskKeepWiFiHandle             // Task handle  
   );
   
-
+  delay(10000);
   xTaskCreatePinnedToCore(
     taskDMD,    // Function that should be called
     "Display DMD",   // Name of the task (for debugging)
@@ -354,8 +354,7 @@ void setup() {
     CONFIG_ARDUINO_RUNNING_CORE
   );
 
-
-  //task 2
+  delay(10000);
   xTaskCreatePinnedToCore(
     taskWebServer,    // Function that should be called
     "Web Server",   // Name of the task (for debugging)
@@ -368,4 +367,5 @@ void setup() {
 }
 
 void loop() {
+  vTaskDelete(NULL);
 }
