@@ -12,6 +12,7 @@
 #include "fonts/SystemFont5x7.h"
 #include "fonts/Arial_black_16.h"
 #include "HTTPClient.h"
+#include "ArduinoJson.h"
 
 
 //=========================================================================
@@ -36,7 +37,10 @@ int s = 0;
 char str_clock[9];
 char timeDay[3];
 char timeMonth[10];
-char timeYear[4];
+char timeYear[5];
+int day;
+int month;
+int year;
 
 const char * ntpServer = "pool.ntp.org";
 const uint8_t timezone = 7;
@@ -475,7 +479,10 @@ void taskClock(void * parameter)
 
   strftime(timeDay,3, "%d", &timeinfo);
   strftime(timeMonth,10, "%B", &timeinfo);
-  strftime(timeYear,4, "%Y", &timeinfo);
+  strftime(timeYear,5, "%Y", &timeinfo);
+  day = timeinfo.tm_mday;
+  month = timeinfo.tm_mon+1;
+  year = timeinfo.tm_year+1900;
 
   String type="AM";
 
@@ -573,7 +580,7 @@ void taskClock(void * parameter)
 String httpGETRequest(const char* serverName) {
   WiFiClientSecure client;
   HTTPClient http;
-    
+  client.setInsecure();
   // Your Domain name with URL path or IP address with path
   http.begin(client, serverName);
   
@@ -599,10 +606,41 @@ String httpGETRequest(const char* serverName) {
 
 void taskJadwalSholat(void * parameter){
   char link[100];
-  sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%d/%d/%d"), timeYear, timeMonth, timeDay);
-  
+  sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%s/%s/%s"), timeYear, timeMonth, timeDay);
+  Serial.println(link);
   String jsonData = httpGETRequest(link);
   Serial.println(jsonData);
+
+  // StaticJsonDocument<768> doc;
+  // DeserializationError error = deserializeJson(doc, jsonData);
+
+  // if (error) {
+  //   Serial.print(F("deserializeJson() failed: "));
+  //   Serial.println(error.f_str());
+  //   return;
+  // }
+
+  // bool status = doc["status"]; // true
+
+  // JsonObject data = doc["data"];
+  // JsonObject data_jadwal = data["jadwal"];
+  // const char* data_jadwal_subuh = data_jadwal["subuh"]; // "04:37"
+  // const char* data_jadwal_dzuhur = data_jadwal["dzuhur"]; // "11:56"
+  // const char* data_jadwal_ashar = data_jadwal["ashar"]; // "15:12"
+  // const char* data_jadwal_maghrib = data_jadwal["maghrib"]; // "17:55"
+  // const char* data_jadwal_isya = data_jadwal["isya"]; // "19:04"
+  
+  // Serial.print("Subuh : ");
+  // Serial.println(data_jadwal_subuh);
+  // Serial.print("Dzuhur : ");
+  // Serial.println(data_jadwal_dzuhur);
+  // Serial.print("Ashar : ");
+  // Serial.println(data_jadwal_ashar);
+  // Serial.print("Magrib : ");
+  // Serial.println(data_jadwal_maghrib);   
+  // Serial.print("Isya : ");
+  // Serial.println(data_jadwal_isya); 
+
   vTaskDelete(NULL);
 }
 
