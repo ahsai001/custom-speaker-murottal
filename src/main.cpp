@@ -26,6 +26,11 @@ TaskHandle_t taskDMDHandle;
 TaskHandle_t taskClockHandle;
 TaskHandle_t taskJWSHandle;
 
+
+int h24 = 12; //hours in 24 format
+int h = 12; // hours in 12 format
+int m = 0; //minutes
+int s = 0; //seconds
 char str_clock[9]; //used by dmd task
 char timeDay[3];
 char timeMonth[10];
@@ -36,6 +41,29 @@ int year;
 
 const uint8_t built_in_led = 2;
 const uint8_t relay = 26;
+
+//22.30 - 23.45 : 1 jam + 15 menit
+//22.30 - 23.15 : 1 jam + -15 menit
+//22.30 - 22.45 : 0 jam + 15 menit
+//22.30 - 22.15 : 0 jam + -15 menit + 24 jam
+//22.30 - 01.45 : -21 jam + 15 menit + 24 jam
+//22.30 - 01.15 : -21 jam + -15 menit + 24 jam
+
+uint32_t msDelayFromNowToTime(uint8_t hours, uint8_t minutes){
+    int64_t deltaInSecond = ((hours-h24)*3600) + ((minutes-m)*60);
+    if(deltaInSecond <= 0){
+      deltaInSecond += 24*3600;
+    }
+    Serial.println("data :::: ");
+    Serial.println(deltaInSecond);
+    return (uint32_t)deltaInSecond*1000;
+}
+
+void delayUntilAtTime(uint8_t hours, uint8_t minutes){
+    uint32_t delta = msDelayFromNowToTime(hours,minutes);
+    Serial.println(delta);
+    delay(delta);
+}
 
 //=========================================================================
 //==================================   Task DMD  ==========================
@@ -442,10 +470,6 @@ const char * ntpServer = "pool.ntp.org";
 const uint8_t timezone = 7; //jakarta GMT+7
 const long  gmtOffset_sec = timezone*3600; //in seconds
 const int   daylightOffset_sec = 0;
-int h24 = 12; //hours in 24 format
-int h = 12; // hours in 12 format
-int m = 0; //minutes
-int s = 0; //seconds
 
 void taskClock(void * parameter)
 {
@@ -581,65 +605,65 @@ void taskClock(void * parameter)
 //==================================  Task Jadwal Sholat =================
 //=========================================================================
 void taskJadwalSholat(void * parameter){
-  char link[100];
-  sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%s/%d/%s"), timeYear, month,timeDay);
-  Serial.println(link);
-  
-  WiFiClientSecure client;
-  HTTPClient http;
-  client.setInsecure();
-
-  // Your Domain name with URL path or IP address with path
-  http.begin(client, link);
-  
-  // Send HTTP POST request
-  int httpResponseCode = http.GET();
-  
-  if (httpResponseCode>0) {
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-  }
-  else {
-    Serial.print("Error code: ");
-    Serial.println(httpResponseCode);
-  }
-
-  String jsonData = http.getString();
-
-  // Free resources
-  http.end();
-
-  DynamicJsonDocument doc(768);
-  DeserializationError error = deserializeJson(doc, jsonData);
-
-  if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.f_str());
-    return;
-  }
-
-  JsonObject data_jadwal = doc["data"]["jadwal"];
-  const char* data_jadwal_subuh = data_jadwal["subuh"]; // "04:37"
-  const char* data_jadwal_dzuhur = data_jadwal["dzuhur"]; // "11:56"
-  const char* data_jadwal_ashar = data_jadwal["ashar"]; // "15:12"
-  const char* data_jadwal_maghrib = data_jadwal["maghrib"]; // "17:55"
-  const char* data_jadwal_isya = data_jadwal["isya"]; // "19:04"
-  
-  Serial.print("Subuh : ");
-  Serial.println(data_jadwal_subuh);
-  Serial.print("Dzuhur : ");
-  Serial.println(data_jadwal_dzuhur);
-  Serial.print("Ashar : ");
-  Serial.println(data_jadwal_ashar);
-  Serial.print("Magrib : ");
-  Serial.println(data_jadwal_maghrib);   
-  Serial.print("Isya : ");
-  Serial.println(data_jadwal_isya); 
-
-  doc.clear();
-
   for(;;){
-    delay(1000);
+    char link[100];
+    sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%s/%d/%s"), timeYear, month,timeDay);
+    Serial.println(link);
+    
+    WiFiClientSecure client;
+    HTTPClient http;
+    client.setInsecure();
+
+    // Your Domain name with URL path or IP address with path
+    http.begin(client, link);
+    
+    // Send HTTP POST request
+    int httpResponseCode = http.GET();
+    
+    if (httpResponseCode>0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+    }
+    else {
+      Serial.print("Error code: ");
+      Serial.println(httpResponseCode);
+    }
+
+    String jsonData = http.getString();
+
+    // Free resources
+    http.end();
+
+    DynamicJsonDocument doc(768);
+    DeserializationError error = deserializeJson(doc, jsonData);
+
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
+
+    JsonObject data_jadwal = doc["data"]["jadwal"];
+    const char* data_jadwal_subuh = data_jadwal["subuh"]; // "04:37"
+    const char* data_jadwal_dzuhur = data_jadwal["dzuhur"]; // "11:56"
+    const char* data_jadwal_ashar = data_jadwal["ashar"]; // "15:12"
+    const char* data_jadwal_maghrib = data_jadwal["maghrib"]; // "17:55"
+    const char* data_jadwal_isya = data_jadwal["isya"]; // "19:04"
+    
+    Serial.print("Subuh : ");
+    Serial.println(data_jadwal_subuh);
+    Serial.print("Dzuhur : ");
+    Serial.println(data_jadwal_dzuhur);
+    Serial.print("Ashar : ");
+    Serial.println(data_jadwal_ashar);
+    Serial.print("Magrib : ");
+    Serial.println(data_jadwal_maghrib);   
+    Serial.print("Isya : ");
+    Serial.println(data_jadwal_isya); 
+
+    doc.clear();
+
+    delayUntilAtTime(1,12);
   }
 }
 
