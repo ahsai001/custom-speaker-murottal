@@ -16,13 +16,9 @@
 
 
 //=========================================================================
-//============================= Declarations ==============================
+//============================= Global Declarations =======================
 //=========================================================================
-
-const char *ssid = "3mbd3vk1d-2";
-const char *password = "marsupiarmadomah3716";
-
-//section code : DMD, toggle led, wifi alive, web server
+//section code : DMD, toggle led, wifi alive, web server, Clock, JWS
 TaskHandle_t taskLEDHandle;
 TaskHandle_t taskWebHandle;
 TaskHandle_t taskKeepWiFiHandle;
@@ -30,11 +26,7 @@ TaskHandle_t taskDMDHandle;
 TaskHandle_t taskClockHandle;
 TaskHandle_t taskJWSHandle;
 
-int h24 = 12;
-int h = 12;
-int m = 0;
-int s = 0; 
-char str_clock[9];
+char str_clock[9]; //used by dmd task
 char timeDay[3];
 char timeMonth[10];
 char timeYear[5];
@@ -42,10 +34,8 @@ int day;
 int month;
 int year;
 
-const char * ntpServer = "pool.ntp.org";
-const uint8_t timezone = 7;
-const long  gmtOffset_sec = timezone*3600;
-const int   daylightOffset_sec = 0;
+const uint8_t built_in_led = 2;
+const uint8_t relay = 26;
 
 //=========================================================================
 //==================================   Task DMD  ==========================
@@ -211,8 +201,6 @@ void taskDMD(void *parameter)
 //================================================================================
 //==================================   Task Toggle LED  ==========================
 //================================================================================
-const uint8_t built_in_led = 2;
-const uint8_t relay = 26;
 uint32_t led_on_delay = 500;
 uint32_t led_off_delay = 500;
 
@@ -251,7 +239,8 @@ void stopTaskToggleLED()
 //=====================================================================================
 //==================================   Task Keep WiFi Alive  ==========================
 //=====================================================================================
-
+const char *ssid = "3mbd3vk1d-2";
+const char *password = "marsupiarmadomah3716";
 #define WIFI_TIMEOUT_MS 20000      // 20 second WiFi connection timeout
 #define WIFI_RECOVER_TIME_MS 30000 // Wait 30 seconds after a failed connection attempt
 
@@ -449,6 +438,15 @@ void taskWebServer(void *parameter)
 //===========================================================================
 //==================================   Task Clock  ==========================
 //===========================================================================
+const char * ntpServer = "pool.ntp.org";
+const uint8_t timezone = 7; //jakarta GMT+7
+const long  gmtOffset_sec = timezone*3600; //in seconds
+const int   daylightOffset_sec = 0;
+int h24 = 12; //hours in 24 format
+int h = 12; // hours in 12 format
+int m = 0; //minutes
+int s = 0; //seconds
+
 void taskClock(void * parameter)
 {
   // Init and get the time
@@ -578,6 +576,10 @@ void taskClock(void * parameter)
 }
 
 
+
+//=========================================================================
+//==================================  Task Jadwal Sholat =================
+//=========================================================================
 void taskJadwalSholat(void * parameter){
   char link[100];
   sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%s/%d/%s"), timeYear, month,timeDay);
@@ -633,6 +635,8 @@ void taskJadwalSholat(void * parameter){
   Serial.println(data_jadwal_maghrib);   
   Serial.print("Isya : ");
   Serial.println(data_jadwal_isya); 
+
+  doc.clear();
 
   for(;;){
     delay(1000);
