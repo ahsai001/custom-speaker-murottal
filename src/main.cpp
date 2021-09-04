@@ -577,71 +577,66 @@ void taskClock(void * parameter)
   }
 }
 
-String httpGETRequest(const char* serverName) {
+
+void taskJadwalSholat(void * parameter){
+  char link[100];
+  sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%s/%d/%s"), timeYear, month,timeDay);
+  Serial.println(link);
+  
   WiFiClientSecure client;
   HTTPClient http;
   client.setInsecure();
+
   // Your Domain name with URL path or IP address with path
-  http.begin(client, serverName);
+  http.begin(client, link);
   
   // Send HTTP POST request
   int httpResponseCode = http.GET();
   
-  String payload = "{}"; 
-  
   if (httpResponseCode>0) {
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
-    payload = http.getString();
   }
   else {
     Serial.print("Error code: ");
     Serial.println(httpResponseCode);
   }
+
+  String jsonData = http.getString();
+
   // Free resources
   http.end();
 
-  return payload;
-}
+  DynamicJsonDocument doc(768);
+  DeserializationError error = deserializeJson(doc, jsonData);
 
-void taskJadwalSholat(void * parameter){
-  char link[100];
-  sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%s/%s/%s"), timeYear, timeMonth, timeDay);
-  Serial.println(link);
-  String jsonData = httpGETRequest(link);
-  Serial.println(jsonData);
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.f_str());
+    return;
+  }
 
-  // StaticJsonDocument<768> doc;
-  // DeserializationError error = deserializeJson(doc, jsonData);
-
-  // if (error) {
-  //   Serial.print(F("deserializeJson() failed: "));
-  //   Serial.println(error.f_str());
-  //   return;
-  // }
-
-  // bool status = doc["status"]; // true
-
-  // JsonObject data = doc["data"];
-  // JsonObject data_jadwal = data["jadwal"];
-  // const char* data_jadwal_subuh = data_jadwal["subuh"]; // "04:37"
-  // const char* data_jadwal_dzuhur = data_jadwal["dzuhur"]; // "11:56"
-  // const char* data_jadwal_ashar = data_jadwal["ashar"]; // "15:12"
-  // const char* data_jadwal_maghrib = data_jadwal["maghrib"]; // "17:55"
-  // const char* data_jadwal_isya = data_jadwal["isya"]; // "19:04"
+  JsonObject data_jadwal = doc["data"]["jadwal"];
+  const char* data_jadwal_subuh = data_jadwal["subuh"]; // "04:37"
+  const char* data_jadwal_dzuhur = data_jadwal["dzuhur"]; // "11:56"
+  const char* data_jadwal_ashar = data_jadwal["ashar"]; // "15:12"
+  const char* data_jadwal_maghrib = data_jadwal["maghrib"]; // "17:55"
+  const char* data_jadwal_isya = data_jadwal["isya"]; // "19:04"
   
-  // Serial.print("Subuh : ");
-  // Serial.println(data_jadwal_subuh);
-  // Serial.print("Dzuhur : ");
-  // Serial.println(data_jadwal_dzuhur);
-  // Serial.print("Ashar : ");
-  // Serial.println(data_jadwal_ashar);
-  // Serial.print("Magrib : ");
-  // Serial.println(data_jadwal_maghrib);   
-  // Serial.print("Isya : ");
-  // Serial.println(data_jadwal_isya); 
+  Serial.print("Subuh : ");
+  Serial.println(data_jadwal_subuh);
+  Serial.print("Dzuhur : ");
+  Serial.println(data_jadwal_dzuhur);
+  Serial.print("Ashar : ");
+  Serial.println(data_jadwal_ashar);
+  Serial.print("Magrib : ");
+  Serial.println(data_jadwal_maghrib);   
+  Serial.print("Isya : ");
+  Serial.println(data_jadwal_isya); 
 
-  vTaskDelete(NULL);
+  for(;;){
+    delay(1000);
+  }
 }
 
 //=========================================================================
@@ -697,7 +692,7 @@ void setup()
   xTaskCreatePinnedToCore(
       taskJadwalSholat,  // Function that should be called
       "Jadwal Sholat",   // Name of the task (for debugging)
-      5000,           // Stack size (bytes)
+      10000,           // Stack size (bytes)
       NULL,           // Parameter to pass
       1,              // Task priority
       &taskJWSHandle, // Task handle
