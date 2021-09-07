@@ -73,7 +73,6 @@ uint32_t sDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds)
     if(deltaInSecond <= 0){
       deltaInSecond += 24*3600;
     }
-    Serial.println(deltaInSecond);
     return (uint32_t)deltaInSecond;
 }
 
@@ -82,8 +81,7 @@ uint32_t sDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseco
     if(deltaInSecond <= 0){
       deltaInSecond += 24*3600;
     }
-    Serial.println(deltaInSecond);
-    return (uint32_t)deltaInSecond*1000;
+    return (uint32_t)deltaInSecond;
 }
 
 void delayUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
@@ -100,16 +98,17 @@ void delayUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
 #define DMD_DATA_SIZE 20
 
 struct DMD_Data{
-  int type = 0; //1:jam, 2:jws, 3:scrollingtext
+  int type = 0; //1:jam, 2:jws, 3:scrollingtext, 4:countdown
   const char * text1;
   const char * text2;
   const uint8_t *font;
-  unsigned long delay = 0; //in ms
+  unsigned long delay = 0; //delay refresh dalam setiap kemunculan
   unsigned long duration = 0; //durasi setiap kemunculan
   int max_count = 1; //jumlah kemunculan
   int count = 0; 
 };
-
+int dmd_loop_index = 0; //we can change this runtime
+struct DMD_Data dmd_data_list[DMD_DATA_SIZE];
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN);
 
 hw_timer_t *timer = NULL;
@@ -121,9 +120,9 @@ void IRAM_ATTR triggerScan()
 }
 
 
-void marqueeText(const uint8_t *font, const char * text){
+void marqueeText(const uint8_t *font, const char * text, int top){
   dmd.selectFont(font);
-  dmd.drawMarquee(text, strlen(text), (32 * DISPLAYS_ACROSS) - 1, 1);
+  dmd.drawMarquee(text, strlen(text), (32 * DISPLAYS_ACROSS) - 1, top);
   long start = millis();
   long timer = start;
   boolean ret = false;
@@ -151,10 +150,40 @@ void setupDMD()
   ledcWrite(0, 20);
 
   dmd.clearScreen(true);
-  marqueeText(Arial_Black_16, scrollingText.c_str());
+  marqueeText(Arial_Black_16, scrollingText.c_str(),1);
   dmd.clearScreen(true);
-  marqueeText(Arial_Black_16, "Developed by AhsaiLabs");
+  marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
+  dmd_data_list[0].type = 1;
+  dmd_data_list[0].text1 = str_clock_full;
+  dmd_data_list[0].font = System5x7;
+  dmd_data_list[0].delay = 1000;
+  dmd_data_list[0].duration = 15000;
+  dmd_data_list[0].max_count = -1;
+
+  dmd_data_list[1].type = 3;
+  dmd_data_list[1].text1 = "Hello World";
+  dmd_data_list[1].font = Arial_Black_16;
+  dmd_data_list[1].delay = 1000;
+  dmd_data_list[1].duration = 10000;
+  dmd_data_list[1].max_count = 1;
+
+  dmd_data_list[10].type = 2;
+  dmd_data_list[10].text1 = count_down_jws;
+  dmd_data_list[10].text2 = type_jws;
+  dmd_data_list[10].font = System5x7;
+  dmd_data_list[10].delay = 1000;
+  dmd_data_list[10].duration = 10000;
+  dmd_data_list[10].max_count = -1;
+
+  dmd_data_list[11].type = 4;
+  dmd_data_list[11].text1 = "Waktu Sholat";
+  dmd_data_list[11].font = System5x7;
+  dmd_data_list[11].delay = 1000;
+  dmd_data_list[11].duration = 30000;
+  dmd_data_list[11].max_count = 1;
+
+  Serial.println("DMD is coming");
 }
 
 unsigned int stringWidth(const uint8_t *font, const char * str){
@@ -183,38 +212,15 @@ void drawTextCenter(const uint8_t * font, const char * str, int top){
 
 void taskDMD(void *parameter)
 {
-  struct DMD_Data dmd_data_list[DMD_DATA_SIZE];
-  dmd_data_list[0].type = 1;
-  dmd_data_list[0].text1 = str_clock_full;
-  dmd_data_list[0].font = System5x7;
-  dmd_data_list[0].delay = 1000;
-  dmd_data_list[0].duration = 15000;
-  dmd_data_list[0].max_count = -1;
-
-  dmd_data_list[1].type = 2;
-  dmd_data_list[1].text1 = count_down_jws;
-  dmd_data_list[1].text2 = type_jws;
-  dmd_data_list[1].font = System5x7;
-  dmd_data_list[1].delay = 1000;
-  dmd_data_list[1].duration = 10000;
-  dmd_data_list[1].max_count = -1;
-  
-  dmd_data_list[2].type = 3;
-  dmd_data_list[2].text1 = "Hello World";
-  dmd_data_list[2].font = Arial_Black_16;
-  dmd_data_list[2].delay = 1000;
-  dmd_data_list[2].duration = 10000;
-  dmd_data_list[2].max_count = -1;
   setupDMD();
   for (;;)
   {
     //byte b;
-    Serial.println("DMD is coming");
     // 10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
     //dmd.drawBox(0, 0, (32 * DISPLAYS_ACROSS) - 1, (16 * DISPLAYS_DOWN) - 1, GRAPHICS_TOGGLE);
 
-    for(int s=0;s<DMD_DATA_SIZE;s++){
-      DMD_Data item = dmd_data_list[s];
+    for(dmd_loop_index=0;dmd_loop_index<DMD_DATA_SIZE;dmd_loop_index++){
+      DMD_Data item = dmd_data_list[dmd_loop_index];
       ++item.count;
       unsigned long start  = millis();
       dmd.clearScreen(true);
@@ -229,7 +235,58 @@ void taskDMD(void *parameter)
           drawTextCenter(item.font, item.text2, 9);
           break;
         case 3:
-          marqueeText(item.font, item.text1);
+          marqueeText(item.font, item.text1, 1);
+          break;
+        case 4:
+          {
+            int counter = item.duration/1000;
+            int leftSeconds = counter;
+            int hours = leftSeconds/3600;
+            int minutes = 0;
+            int seconds = 0;
+            if(hours > 0){
+              leftSeconds = leftSeconds % 3600;
+            }
+            minutes = leftSeconds/60;
+            if(minutes > 0){
+              leftSeconds = leftSeconds % 60;
+            }
+            seconds = leftSeconds;
+
+            dmd.selectFont(item.font);
+            
+            long start = millis();
+            long timer = start;
+            int width = stringWidth(item.font,item.text1);
+            int posx = 32*2 - 1;
+            while(counter >= 0){
+              if (millis() - start > item.delay){
+                if(seconds==-1){
+                  seconds=59;
+                  minutes--;
+                }
+                if(minutes==-1){
+                  minutes=59;
+                  hours--;
+                }
+                //display
+                char count_down[9];
+                sprintf_P(count_down, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
+                drawTextCenter(item.font, count_down, 1);
+                seconds--;
+                counter--;
+                start = millis();
+              }
+
+              if (millis() - timer > 30){
+                dmd.drawString(--posx, 9, item.text1, strlen(item.text1), GRAPHICS_NORMAL);
+                if(posx < (-1*width)){
+                  posx = 32*2 - 1;
+                }
+                timer = millis();
+              }
+            }
+          }
           break;
         default:
           break;
@@ -238,11 +295,11 @@ void taskDMD(void *parameter)
       }
       if(item.max_count > 0 && item.count >= item.max_count){
         //reset struct to stop drawing in dmd
-        item.count = 0;
-        item.max_count = 1;
-        item.delay = 0;
-        item.duration = 0;
-        item.type = 0;
+        (*(dmd_data_list+dmd_loop_index)).count = 0;
+        (*(dmd_data_list+dmd_loop_index)).max_count = 1;
+        (*(dmd_data_list+dmd_loop_index)).delay = 0;
+        (*(dmd_data_list+dmd_loop_index)).duration = 0;
+        (*(dmd_data_list+dmd_loop_index)).type = 0;
       }
     }
     
@@ -822,6 +879,8 @@ void taskCountDownJWS(void * parameter){
     
     int counter = 0;
 
+    memset(type_jws,0,sizeof(type_jws));
+
     if(clock[3] <= subuh[3] || clock[3] > isya[3]){
       sprintf_P(type_jws, (PGM_P)F("subuh"));
       counter = sDistanceFromTimeToTime(clock[0],clock[1],clock[2],subuh[0],subuh[1],subuh[2]);
@@ -877,6 +936,14 @@ void taskCountDownJWS(void * parameter){
       counter--;
       delay(1000);
     }
+
+    //show alert
+    dmd_data_list[11].type = 4;
+    dmd_data_list[11].text1 = "Bersiap-siap sholat";
+    dmd_data_list[11].font = System5x7;
+    dmd_data_list[11].delay = 1000;
+    dmd_data_list[11].duration = 30000;
+    dmd_data_list[11].max_count = 1;
     delay(5000);
   }
 }
