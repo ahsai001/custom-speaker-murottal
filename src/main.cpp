@@ -15,9 +15,12 @@
 #include "ArduinoJson.h"
 
 
+
 //=========================================================================
 //============================= Global Declarations =======================
 //=========================================================================
+
+
 //section code : DMD, toggle led, wifi alive, web server, Clock, JWS
 TaskHandle_t taskLEDHandle;
 TaskHandle_t taskWebHandle;
@@ -94,6 +97,17 @@ void delayUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
 //=========================================================================
 #define DISPLAYS_ACROSS 2
 #define DISPLAYS_DOWN 1
+#define DMD_DATA_SIZE 20
+
+struct DMD_Data{
+  int type = 0; //1:jam, 2:jws, 3:scrollingtext
+  const char * text1;
+  const char * text2;
+  unsigned long delay = 0; //in ms
+  unsigned long duration = 0; //durasi setiap kemunculan
+  int count = 1; //jumlah kemunculan
+};
+
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN);
 
 hw_timer_t *timer = NULL;
@@ -105,7 +119,8 @@ void IRAM_ATTR triggerScan()
 }
 
 
-void marqueeText(const char * text){
+void marqueeText(const uint8_t *font, const char * text){
+  dmd.selectFont(font);
   dmd.drawMarquee(text, strlen(text), (32 * DISPLAYS_ACROSS) - 1, 1);
   long start = millis();
   long timer = start;
@@ -134,9 +149,8 @@ void setupDMD()
   ledcWrite(0, 20);
 
   dmd.clearScreen(true);
-  dmd.selectFont(Arial_Black_16);
-  marqueeText(scrollingText.c_str());
-  marqueeText("Developed by AhsaiLabs");
+  marqueeText(Arial_Black_16, scrollingText.c_str());
+  marqueeText(Arial_Black_16, "Developed by AhsaiLabs");
 
 }
 
@@ -162,8 +176,32 @@ void drawTextCenter(const uint8_t * font, const char * str, int top){
     dmd.drawString(posX, top, str, strlen(str), GRAPHICS_NORMAL);
 }
 
+
+
+
 void taskDMD(void *parameter)
 {
+  struct DMD_Data dmd_data_list[DMD_DATA_SIZE];
+  dmd_data_list[0].type = 1;
+  dmd_data_list[0].text1 = str_clock_full;
+  dmd_data_list[0].delay = 1000;
+  dmd_data_list[0].duration = 15000;
+  dmd_data_list[0].count = -1;
+
+  dmd_data_list[1].type = 2;
+  dmd_data_list[1].text1 = count_down_jws;
+  dmd_data_list[1].text2 = type_jws;
+  dmd_data_list[1].delay = 1000;
+  dmd_data_list[1].duration = 10000;
+  dmd_data_list[1].count = -1;
+  
+  dmd_data_list[2].type = 3;
+  dmd_data_list[2].text1 = "Hello World";
+  dmd_data_list[2].delay = 1000;
+  dmd_data_list[2].duration = 10000;
+  dmd_data_list[2].count = -1;
+  //sdfa[1] = {2, count_down_jws, type_jws,1000,5000,-1};
+  //sdfa[2] = {3, "Hello World", NULL,1000,5000,-1};
   setupDMD();
   for (;;)
   {
@@ -172,10 +210,29 @@ void taskDMD(void *parameter)
     // 10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
     //dmd.drawBox(0, 0, (32 * DISPLAYS_ACROSS) - 1, (16 * DISPLAYS_DOWN) - 1, GRAPHICS_TOGGLE);
 
-    drawTextCenter(System5x7, count_down_jws, 0);
-    drawTextCenter(System5x7, type_jws, 9);
-    //drawTextCenter(System5x7, str_clock_full);
-    delay(1000);
+    for(int s=0;s<DMD_DATA_SIZE;s++){
+      DMD_Data item = dmd_data_list[s];
+      unsigned long start  = millis();
+      while(start + item.duration > millis()){
+        switch (item.type)
+        {
+        case 1:
+          drawTextCenter(System5x7, item.text1, 5);
+          break;
+        case 2:
+          drawTextCenter(System5x7, item.text1, 1);
+          drawTextCenter(System5x7, item.text2, 9);
+          break;
+        case 3:
+          marqueeText(Arial_Black_16, item.text1);
+          break;
+        default:
+          break;
+        }
+        delay(item.delay);
+      }
+    }
+    
 
     /*
     dmd.drawChar(0, 3, '2', GRAPHICS_NORMAL);
