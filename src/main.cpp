@@ -103,9 +103,11 @@ struct DMD_Data{
   int type = 0; //1:jam, 2:jws, 3:scrollingtext
   const char * text1;
   const char * text2;
+  const uint8_t *font;
   unsigned long delay = 0; //in ms
   unsigned long duration = 0; //durasi setiap kemunculan
-  int count = 1; //jumlah kemunculan
+  int max_count = 1; //jumlah kemunculan
+  int count = 0; 
 };
 
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN);
@@ -150,6 +152,7 @@ void setupDMD()
 
   dmd.clearScreen(true);
   marqueeText(Arial_Black_16, scrollingText.c_str());
+  dmd.clearScreen(true);
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs");
 
 }
@@ -178,30 +181,30 @@ void drawTextCenter(const uint8_t * font, const char * str, int top){
 
 
 
-
 void taskDMD(void *parameter)
 {
   struct DMD_Data dmd_data_list[DMD_DATA_SIZE];
   dmd_data_list[0].type = 1;
   dmd_data_list[0].text1 = str_clock_full;
+  dmd_data_list[0].font = System5x7;
   dmd_data_list[0].delay = 1000;
   dmd_data_list[0].duration = 15000;
-  dmd_data_list[0].count = -1;
+  dmd_data_list[0].max_count = -1;
 
   dmd_data_list[1].type = 2;
   dmd_data_list[1].text1 = count_down_jws;
   dmd_data_list[1].text2 = type_jws;
+  dmd_data_list[1].font = System5x7;
   dmd_data_list[1].delay = 1000;
   dmd_data_list[1].duration = 10000;
-  dmd_data_list[1].count = -1;
+  dmd_data_list[1].max_count = -1;
   
   dmd_data_list[2].type = 3;
   dmd_data_list[2].text1 = "Hello World";
+  dmd_data_list[2].font = Arial_Black_16;
   dmd_data_list[2].delay = 1000;
   dmd_data_list[2].duration = 10000;
-  dmd_data_list[2].count = -1;
-  //sdfa[1] = {2, count_down_jws, type_jws,1000,5000,-1};
-  //sdfa[2] = {3, "Hello World", NULL,1000,5000,-1};
+  dmd_data_list[2].max_count = -1;
   setupDMD();
   for (;;)
   {
@@ -212,24 +215,34 @@ void taskDMD(void *parameter)
 
     for(int s=0;s<DMD_DATA_SIZE;s++){
       DMD_Data item = dmd_data_list[s];
+      ++item.count;
       unsigned long start  = millis();
+      dmd.clearScreen(true);
       while(start + item.duration > millis()){
         switch (item.type)
         {
         case 1:
-          drawTextCenter(System5x7, item.text1, 5);
+          drawTextCenter(item.font, item.text1, 5);
           break;
         case 2:
-          drawTextCenter(System5x7, item.text1, 1);
-          drawTextCenter(System5x7, item.text2, 9);
+          drawTextCenter(item.font, item.text1, 1);
+          drawTextCenter(item.font, item.text2, 9);
           break;
         case 3:
-          marqueeText(Arial_Black_16, item.text1);
+          marqueeText(item.font, item.text1);
           break;
         default:
           break;
         }
         delay(item.delay);
+      }
+      if(item.max_count > 0 && item.count >= item.max_count){
+        //reset struct to stop drawing in dmd
+        item.count = 0;
+        item.max_count = 1;
+        item.delay = 0;
+        item.duration = 0;
+        item.type = 0;
       }
     }
     
@@ -780,7 +793,7 @@ std::array<float, 4>  getArrayOfTime(char * time){
       index++;
       token = strtok(NULL, delimiter);
   }
-  as[3] = as[0]*3600+as[1]*60+as[2];
+  as[3] = (as[0]*3600)+(as[1]*60)+as[2];
   Serial.print("=>");
   Serial.print(as[0]);
   Serial.print("-");
@@ -809,36 +822,38 @@ void taskCountDownJWS(void * parameter){
     
     int counter = 0;
 
-    if(clock[3] < subuh[3] || clock[3] > isya[3]){
+    if(clock[3] <= subuh[3] || clock[3] > isya[3]){
       sprintf_P(type_jws, (PGM_P)F("subuh"));
       counter = sDistanceFromTimeToTime(clock[0],clock[1],clock[2],subuh[0],subuh[1],subuh[2]);
-    } else if(clock[3] < dzuhur[3]){
+    } else if(clock[3] <= dzuhur[3]){
       sprintf_P(type_jws, (PGM_P)F("dzuhur"));
       counter = dzuhur[3] - clock[3];
-    } else if(clock[3] < ashar[3]){
+    } else if(clock[3] <= ashar[3]){
       sprintf_P(type_jws, (PGM_P)F("ashar"));
       counter = ashar[3] - clock[3];
-    } else if(clock[3] < maghrib[3]){
+    } else if(clock[3] <= maghrib[3]){
       sprintf_P(type_jws, (PGM_P)F("maghrib"));
       counter = maghrib[3] - clock[3];
-    } else if(clock[3] < isya[3]){
+    } else if(clock[3] <= isya[3]){
       sprintf_P(type_jws, (PGM_P)F("isya"));
       counter = isya[3] - clock[3];
     }
     
-    Serial.print("Counter Countdown : ");
+    Serial.print("Counter Countdown for ");
+    Serial.print(type_jws);
+    Serial.print(" : ");
     Serial.println(counter);
 
-    int hours = counter/3600;
+    int leftSeconds = counter;
+    int hours = leftSeconds/3600;
     int minutes = 0;
     int seconds = 0;
-    int leftSeconds = 0;
     if(hours > 0){
-      leftSeconds = counter % 3600;
+      leftSeconds = leftSeconds % 3600;
     }
     minutes = leftSeconds/60;
     if(minutes > 0){
-      leftSeconds = counter % 60;
+      leftSeconds = leftSeconds % 60;
     }
     seconds = leftSeconds;
 
@@ -862,7 +877,7 @@ void taskCountDownJWS(void * parameter){
       counter--;
       delay(1000);
     }
-    delay(1000);
+    delay(5000);
   }
 }
 
