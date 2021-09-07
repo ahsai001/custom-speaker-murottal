@@ -31,16 +31,32 @@ int h24 = 12; //hours in 24 format
 int h = 12; // hours in 12 format
 int m = 0; //minutes
 int s = 0; //seconds
-char str_clock[9]; //used by dmd task
+char str_clock_full[9]; //used by dmd task
+char str_clock[6]; //used by dmd task
 char timeDay[3];
 char timeMonth[10];
 char timeYear[5];
 int day;
 int month;
 int year;
+bool isWiFiReady = false;
+bool isClockReady = false;
+bool isDMDReady = false;
+bool isJWSReady = false;
+bool isCountdownJWSReady = false;
 
 const uint8_t built_in_led = 2;
 const uint8_t relay = 26;
+
+
+char data_jadwal_subuh[9];
+char data_jadwal_dzuhur[9];
+char data_jadwal_ashar[9];
+char data_jadwal_maghrib[9];
+char data_jadwal_isya[9];
+
+char type_jws[8]; //subuh, dzuhur, ashar, maghrib, isya
+char count_down_jws[9]; //04:30:00
 
 //22.30 - 23.45 : 1 jam + 15 menit
 //22.30 - 23.15 : 1 jam + -15 menit
@@ -49,18 +65,26 @@ const uint8_t relay = 26;
 //22.30 - 01.45 : -21 jam + 15 menit + 24 jam
 //22.30 - 01.15 : -21 jam + -15 menit + 24 jam
 
-uint32_t msDelayFromNowToTime(uint8_t hours, uint8_t minutes){
-    int64_t deltaInSecond = ((hours-h24)*3600) + ((minutes-m)*60);
+uint32_t sDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
+    int64_t deltaInSecond = ((hours-h24)*3600) + ((minutes-m)*60) + seconds-s;
     if(deltaInSecond <= 0){
       deltaInSecond += 24*3600;
     }
-    Serial.println("data :::: ");
+    Serial.println(deltaInSecond);
+    return (uint32_t)deltaInSecond;
+}
+
+uint32_t sDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
+    int64_t deltaInSecond = ((thours-fhours)*3600) + ((tminutes-fminutes)*60) + (tseconds-fseconds);
+    if(deltaInSecond <= 0){
+      deltaInSecond += 24*3600;
+    }
     Serial.println(deltaInSecond);
     return (uint32_t)deltaInSecond*1000;
 }
 
-void delayUntilAtTime(uint8_t hours, uint8_t minutes){
-    uint32_t delta = msDelayFromNowToTime(hours,minutes);
+void delayUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
+    uint32_t delta = sDistanceFromNowToTime(hours,minutes, seconds)*1000;
     Serial.println(delta);
     delay(delta);
 }
@@ -132,10 +156,10 @@ unsigned int stringWidth(const uint8_t *font, const char * str){
   return width;
 }
 
-void drawTextCenter(const uint8_t * font, const char * str){
+void drawTextCenter(const uint8_t * font, const char * str, int top){
     unsigned int length = stringWidth(font, str);
     float posX = ((32 * DISPLAYS_ACROSS) - length)/2;
-    dmd.drawString(posX, 5, str, strlen(str), GRAPHICS_NORMAL);
+    dmd.drawString(posX, top, str, strlen(str), GRAPHICS_NORMAL);
 }
 
 void taskDMD(void *parameter)
@@ -147,8 +171,12 @@ void taskDMD(void *parameter)
     Serial.println("DMD is coming");
     // 10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
     //dmd.drawBox(0, 0, (32 * DISPLAYS_ACROSS) - 1, (16 * DISPLAYS_DOWN) - 1, GRAPHICS_TOGGLE);
-    drawTextCenter(System5x7, str_clock);
+
+    drawTextCenter(System5x7, count_down_jws, 0);
+    drawTextCenter(System5x7, type_jws, 9);
+    //drawTextCenter(System5x7, str_clock_full);
     delay(1000);
+
     /*
     dmd.drawChar(0, 3, '2', GRAPHICS_NORMAL);
     dmd.drawChar(7, 3, '3', GRAPHICS_NORMAL);
@@ -281,7 +309,7 @@ void taskKeepWiFiAlive(void *parameter)
       delay(10000);
       continue;
     }
-
+    isWiFiReady = false;
     startTaskToggleLED();
 
     Serial.println("[WIFI] Connecting");
@@ -306,6 +334,7 @@ void taskKeepWiFiAlive(void *parameter)
       continue;
     }
 
+    isWiFiReady = true;
     Serial.print("Connected to ");
     Serial.println(ssid);
     Serial.print("IP address: ");
@@ -315,7 +344,6 @@ void taskKeepWiFiAlive(void *parameter)
     {
       Serial.println("speaker-murottal.local is available");
     }
-
     stopTaskToggleLED();
   }
 }
@@ -466,19 +494,27 @@ void taskWebServer(void *parameter)
 //===========================================================================
 //==================================   Task Clock  ==========================
 //===========================================================================
-const char * ntpServer = "pool.ntp.org";
+//const char * ntpServer = "pool.ntp.org";
+const char * ntpServer = "time.google.com";
 const uint8_t timezone = 7; //jakarta GMT+7
 const long  gmtOffset_sec = timezone*3600; //in seconds
 const int   daylightOffset_sec = 0;
 
 void taskClock(void * parameter)
 {
+  while (!isWiFiReady)
+  {
+    Serial.println("Task clock waiting for wifi...");
+    delay(5000);
+  }
+  
   // Init and get the time
+  isClockReady = false;
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
+  while(!getLocalTime(&timeinfo)){
     Serial.println("Failed to obtain time");
-    return;
+    delay(2000);
   }
 
   Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
@@ -594,11 +630,12 @@ void taskClock(void * parameter)
     // Serial.print(m);
     // Serial.print(":");
     // Serial.println(s);
-    sprintf_P(str_clock, (PGM_P)F("%02d:%02d:%02d"), h, m, s);
+    sprintf_P(str_clock_full, (PGM_P)F("%02d:%02d:%02d"), h24, m, s);
+    sprintf_P(str_clock, (PGM_P)F("%02d:%02d"), h24, m);
+    isClockReady = true;
     //Serial.println(str_clock);
   }
 }
-
 
 
 //=========================================================================
@@ -606,6 +643,11 @@ void taskClock(void * parameter)
 //=========================================================================
 void taskJadwalSholat(void * parameter){
   for(;;){
+    if(!isClockReady){
+      Serial.println("Task JWS waiting for clock...");
+      delay(3000);
+      continue;
+    }
     char link[100];
     sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%s/%d/%s"), timeYear, month,timeDay);
     Serial.println(link);
@@ -640,15 +682,18 @@ void taskJadwalSholat(void * parameter){
     if (error) {
       Serial.print(F("deserializeJson() failed: "));
       Serial.println(error.f_str());
-      return;
+      delay(4000);
+      isJWSReady = false;
+      continue;
     }
 
     JsonObject data_jadwal = doc["data"]["jadwal"];
-    const char* data_jadwal_subuh = data_jadwal["subuh"]; // "04:37"
-    const char* data_jadwal_dzuhur = data_jadwal["dzuhur"]; // "11:56"
-    const char* data_jadwal_ashar = data_jadwal["ashar"]; // "15:12"
-    const char* data_jadwal_maghrib = data_jadwal["maghrib"]; // "17:55"
-    const char* data_jadwal_isya = data_jadwal["isya"]; // "19:04"
+
+    sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), data_jadwal["subuh"].as<const char*>());// "04:37"
+    sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), data_jadwal["dzuhur"].as<const char*>());
+    sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), data_jadwal["ashar"].as<const char*>());
+    sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), data_jadwal["maghrib"].as<const char*>());
+    sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), data_jadwal["isya"].as<const char*>());
     
     Serial.print("Subuh : ");
     Serial.println(data_jadwal_subuh);
@@ -662,8 +707,105 @@ void taskJadwalSholat(void * parameter){
     Serial.println(data_jadwal_isya); 
 
     doc.clear();
+    isJWSReady = true;
+    delayUntilAtTime(1,12,0);
+  }
+}
 
-    delayUntilAtTime(1,12);
+std::array<float, 4>  getArrayOfTime(char * time){
+  Serial.print(time);
+  const char delimiter[2] = ":";
+  char * token = strtok(time, delimiter);
+  std::array<float, 4> as;
+  int index = 0;
+  while( token != NULL ) {
+      as[index] = atoi(token);
+      index++;
+      token = strtok(NULL, delimiter);
+  }
+  as[3] = as[0]*3600+as[1]*60+as[2];
+  Serial.print("=>");
+  Serial.print(as[0]);
+  Serial.print("-");
+  Serial.print(as[1]);
+  Serial.print("-");
+  Serial.print(as[2]);
+  Serial.print("-");
+  Serial.println(as[3]);
+  return as;
+}
+
+void taskCountDownJWS(void * parameter){
+  for(;;){
+    if(!isJWSReady){
+      Serial.println("Task countdown-jws waiting for jws...");
+      isCountdownJWSReady = false;
+      delay(3000);
+      continue;
+    }
+    std::array<float,4> clock = getArrayOfTime(str_clock_full);
+    std::array<float,4> subuh = getArrayOfTime(data_jadwal_subuh);
+    std::array<float,4> dzuhur = getArrayOfTime(data_jadwal_dzuhur);
+    std::array<float,4> ashar = getArrayOfTime(data_jadwal_ashar);
+    std::array<float,4> maghrib = getArrayOfTime(data_jadwal_maghrib);
+    std::array<float,4> isya = getArrayOfTime(data_jadwal_isya);
+    
+    int counter = 0;
+
+    if(clock[3] < subuh[3] || clock[3] > isya[3]){
+      sprintf_P(type_jws, (PGM_P)F("subuh"));
+      counter = sDistanceFromTimeToTime(clock[0],clock[1],clock[2],subuh[0],subuh[1],subuh[2]);
+    } else if(clock[3] < dzuhur[3]){
+      sprintf_P(type_jws, (PGM_P)F("dzuhur"));
+      counter = dzuhur[3] - clock[3];
+    } else if(clock[3] < ashar[3]){
+      sprintf_P(type_jws, (PGM_P)F("ashar"));
+      counter = ashar[3] - clock[3];
+    } else if(clock[3] < maghrib[3]){
+      sprintf_P(type_jws, (PGM_P)F("maghrib"));
+      counter = maghrib[3] - clock[3];
+    } else if(clock[3] < isya[3]){
+      sprintf_P(type_jws, (PGM_P)F("isya"));
+      counter = isya[3] - clock[3];
+    }
+    
+    Serial.print("Counter Countdown : ");
+    Serial.println(counter);
+
+    int hours = counter/3600;
+    int minutes = 0;
+    int seconds = 0;
+    int leftSeconds = 0;
+    if(hours > 0){
+      leftSeconds = counter % 3600;
+    }
+    minutes = leftSeconds/60;
+    if(minutes > 0){
+      leftSeconds = counter % 60;
+    }
+    seconds = leftSeconds;
+
+    while(counter > 0 && !(hours==0 && minutes==0 && seconds==0)){
+      if(seconds==-1){
+        seconds=59;
+        minutes--;
+      }
+      if(minutes==-1){
+        minutes=59;
+        hours--;
+      }
+      //display
+      sprintf_P(count_down_jws, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
+      isCountdownJWSReady = true;
+      //Serial.print("String Countdown : ");
+      //Serial.print(type_jws);
+      //Serial.print(" : ");
+      //Serial.println(count_down_jws);
+      seconds--;
+      counter--;
+      delay(1000);
+    }
+    delay(1000);
   }
 }
 
@@ -721,6 +863,16 @@ void setup()
       taskJadwalSholat,  // Function that should be called
       "Jadwal Sholat",   // Name of the task (for debugging)
       10000,           // Stack size (bytes)
+      NULL,           // Parameter to pass
+      1,              // Task priority
+      &taskJWSHandle, // Task handle
+      CONFIG_ARDUINO_RUNNING_CORE);
+
+  delay(5000);
+  xTaskCreatePinnedToCore(
+      taskCountDownJWS,  // Function that should be called
+      "Countdown Jadwal Sholat",   // Name of the task (for debugging)
+      5000,           // Stack size (bytes)
       NULL,           // Parameter to pass
       1,              // Task priority
       &taskJWSHandle, // Task handle
