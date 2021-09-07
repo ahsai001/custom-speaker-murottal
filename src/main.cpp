@@ -162,11 +162,18 @@ void setupDMD()
   dmd_data_list[0].max_count = -1;
 
   dmd_data_list[1].type = 3;
-  dmd_data_list[1].text1 = "Hello World";
+  dmd_data_list[1].text1 = "Kejarlah Akhirat dan Jangan Lupakan Dunia";
   dmd_data_list[1].font = Arial_Black_16;
   dmd_data_list[1].delay = 1000;
   dmd_data_list[1].duration = 10000;
-  dmd_data_list[1].max_count = 1;
+  dmd_data_list[1].max_count = -1;
+
+  dmd_data_list[2].type = 3;
+  dmd_data_list[2].text1 = "Bertakwa dan bertawakal lah hanya kepada Allah";
+  dmd_data_list[2].font = Arial_Black_16;
+  dmd_data_list[2].delay = 1000;
+  dmd_data_list[2].duration = 10000;
+  dmd_data_list[2].max_count = -1;
 
   dmd_data_list[10].type = 2;
   dmd_data_list[10].text1 = count_down_jws;
@@ -176,12 +183,12 @@ void setupDMD()
   dmd_data_list[10].duration = 10000;
   dmd_data_list[10].max_count = -1;
 
-  dmd_data_list[11].type = 4;
-  dmd_data_list[11].text1 = "Waktu Sholat";
-  dmd_data_list[11].font = System5x7;
-  dmd_data_list[11].delay = 1000;
-  dmd_data_list[11].duration = 30000;
-  dmd_data_list[11].max_count = 1;
+  dmd_data_list[12].type = 3;
+  dmd_data_list[12].text1 = "Utamakan sholat dalam keseharianmu";
+  dmd_data_list[12].font = Arial_Black_16;
+  dmd_data_list[12].delay = 1000;
+  dmd_data_list[12].duration = 10000;
+  dmd_data_list[12].max_count = -1;
 
   Serial.println("DMD is coming");
 }
@@ -938,12 +945,14 @@ void taskCountDownJWS(void * parameter){
     }
 
     //show alert
+    char count_down_alert[30] = {0};
+    sprintf_P(count_down_alert, (PGM_P)F("Waktunya sholat "), type_jws);
     dmd_data_list[11].type = 4;
-    dmd_data_list[11].text1 = "Bersiap-siap sholat";
+    dmd_data_list[11].text1 = count_down_alert;
     dmd_data_list[11].font = System5x7;
     dmd_data_list[11].delay = 1000;
     dmd_data_list[11].duration = 30000;
-    dmd_data_list[11].max_count = 1;
+    dmd_data_list[11].max_count = 5;
     delay(5000);
   }
 }
