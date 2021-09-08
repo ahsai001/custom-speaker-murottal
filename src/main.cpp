@@ -108,7 +108,7 @@ struct DMD_Data{
   int count = 0; 
 };
 int dmd_loop_index = 0; //we can change this runtime
-struct DMD_Data dmd_data_list[DMD_DATA_SIZE];
+struct DMD_Data dmd_data_list[DMD_DATA_SIZE]; //index 0 - 5 for important message
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN);
 
 hw_timer_t *timer = NULL;
@@ -154,41 +154,49 @@ void setupDMD()
   dmd.clearScreen(true);
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
-  dmd_data_list[0].type = 1;
-  dmd_data_list[0].text1 = str_clock_full;
-  dmd_data_list[0].font = System5x7;
-  dmd_data_list[0].delay = 1000;
-  dmd_data_list[0].duration = 15000;
-  dmd_data_list[0].max_count = -1;
+  dmd_data_list[5].type = 1;
+  dmd_data_list[5].text1 = str_clock_full;
+  dmd_data_list[5].font = System5x7;
+  dmd_data_list[5].delay = 1000;
+  dmd_data_list[5].duration = 15000;
+  dmd_data_list[5].max_count = -1;
 
-  dmd_data_list[1].type = 3;
-  dmd_data_list[1].text1 = "Kejarlah Akhirat dan Jangan Lupakan Dunia";
-  dmd_data_list[1].font = Arial_Black_16;
-  dmd_data_list[1].delay = 1000;
-  dmd_data_list[1].duration = 10000;
-  dmd_data_list[1].max_count = -1;
+  dmd_data_list[6].type = 3;
+  dmd_data_list[6].text1 = "Kejarlah Akhirat dan Jangan Lupakan Dunia";
+  dmd_data_list[6].font = Arial_Black_16;
+  dmd_data_list[6].delay = 1000;
+  dmd_data_list[6].duration = 10000;
+  dmd_data_list[6].max_count = -1;
 
-  dmd_data_list[2].type = 3;
-  dmd_data_list[2].text1 = "Bertakwa dan bertawakal lah hanya kepada Allah";
-  dmd_data_list[2].font = Arial_Black_16;
-  dmd_data_list[2].delay = 1000;
-  dmd_data_list[2].duration = 10000;
-  dmd_data_list[2].max_count = -1;
+  dmd_data_list[7].type = 2;
+  dmd_data_list[7].text1 = count_down_jws;
+  dmd_data_list[7].text2 = type_jws;
+  dmd_data_list[7].font = System5x7;
+  dmd_data_list[7].delay = 1000;
+  dmd_data_list[7].duration = 10000;
+  dmd_data_list[7].max_count = -1;
 
-  dmd_data_list[10].type = 2;
-  dmd_data_list[10].text1 = count_down_jws;
-  dmd_data_list[10].text2 = type_jws;
-  dmd_data_list[10].font = System5x7;
+  dmd_data_list[8].type = 3;
+  dmd_data_list[8].text1 = "Bertakwa dan bertawakal lah hanya kepada Allah";
+  dmd_data_list[8].font = Arial_Black_16;
+  dmd_data_list[8].delay = 1000;
+  dmd_data_list[8].duration = 10000;
+  dmd_data_list[8].max_count = -1;
+
+  dmd_data_list[9].type = 2;
+  dmd_data_list[9].text1 = count_down_jws;
+  dmd_data_list[9].text2 = type_jws;
+  dmd_data_list[9].font = System5x7;
+  dmd_data_list[9].delay = 1000;
+  dmd_data_list[9].duration = 10000;
+  dmd_data_list[9].max_count = -1;
+
+  dmd_data_list[10].type = 3;
+  dmd_data_list[10].text1 = "Utamakan sholat dalam keseharianmu";
+  dmd_data_list[10].font = Arial_Black_16;
   dmd_data_list[10].delay = 1000;
   dmd_data_list[10].duration = 10000;
   dmd_data_list[10].max_count = -1;
-
-  dmd_data_list[12].type = 3;
-  dmd_data_list[12].text1 = "Utamakan sholat dalam keseharianmu";
-  dmd_data_list[12].font = Arial_Black_16;
-  dmd_data_list[12].delay = 1000;
-  dmd_data_list[12].duration = 10000;
-  dmd_data_list[12].max_count = -1;
 
   Serial.println("DMD is coming");
 }
@@ -923,7 +931,7 @@ void taskCountDownJWS(void * parameter){
     }
     seconds = leftSeconds;
 
-    while(counter > 0 && !(hours==0 && minutes==0 && seconds==0)){
+    while(counter >= 0 && !(hours==0 && minutes==0 && seconds==0)){
       if(seconds==-1){
         seconds=59;
         minutes--;
@@ -946,13 +954,13 @@ void taskCountDownJWS(void * parameter){
 
     //show alert
     char count_down_alert[30] = {0};
-    sprintf_P(count_down_alert, (PGM_P)F("Waktunya sholat "), type_jws);
-    dmd_data_list[11].type = 4;
-    dmd_data_list[11].text1 = count_down_alert;
-    dmd_data_list[11].font = System5x7;
-    dmd_data_list[11].delay = 1000;
-    dmd_data_list[11].duration = 30000;
-    dmd_data_list[11].max_count = 5;
+    sprintf_P(count_down_alert, (PGM_P)F("Waktunya sholat %s"), type_jws);
+    dmd_data_list[1].type = 4;
+    dmd_data_list[1].text1 = count_down_alert;
+    dmd_data_list[1].font = System5x7;
+    dmd_data_list[1].delay = 1000;
+    dmd_data_list[1].duration = 300000; //5 menit
+    dmd_data_list[1].max_count = 2;
     delay(5000);
   }
 }
