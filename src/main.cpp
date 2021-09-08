@@ -86,7 +86,7 @@ uint32_t sDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseco
 
 void delayUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
     uint32_t delta = sDistanceFromNowToTime(hours,minutes, seconds)*1000;
-    Serial.println(delta);
+    //Serial.println(delta);
     delay(delta);
 }
 
@@ -99,14 +99,17 @@ void delayUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
 
 struct DMD_Data{
   int type = 0; //1:jam, 2:jws, 3:scrollingtext, 4:countdown
-  const char * text1;
-  const char * text2;
+  char * text1;
+  bool need_free_text1 = false;
+  char * text2;
+  bool need_free_text2 = false;
   const uint8_t *font;
   unsigned long delay = 0; //delay refresh dalam setiap kemunculan
   unsigned long duration = 0; //durasi setiap kemunculan
   int max_count = 1; //jumlah kemunculan
   int count = 0; 
 };
+bool need_reset_dmd_index = false;
 int dmd_loop_index = 0; //we can change this runtime
 struct DMD_Data dmd_data_list[DMD_DATA_SIZE]; //index 0 - 5 for important message
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN);
@@ -135,11 +138,26 @@ void marqueeText(const uint8_t *font, const char * text, int top){
     }
   }
 }
+void notifyNow(){
+  need_reset_dmd_index = true;
+}
+
+void setupDMDdata(uint8_t index, uint8_t type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
+  dmd_data_list[index].type = type;
+  dmd_data_list[index].text1 = (char*)text1;
+  dmd_data_list[index].need_free_text1 = need_free_text1;
+  dmd_data_list[index].text2 = (char*)text2;
+  dmd_data_list[index].need_free_text2 = need_free_text2;
+  dmd_data_list[index].font = font;
+  dmd_data_list[index].delay = delay;
+  dmd_data_list[index].duration = duration;
+  dmd_data_list[index].max_count = max_count;
+}
 
 void setupDMDdata(uint8_t index, uint8_t type, const char * text1, const char * text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
   dmd_data_list[index].type = type;
-  dmd_data_list[index].text1 = text1;
-  dmd_data_list[index].text2 = text2;
+  dmd_data_list[index].text1 = (char*)text1;
+  dmd_data_list[index].text2 = (char*)text2;
   dmd_data_list[index].font = font;
   dmd_data_list[index].delay = delay;
   dmd_data_list[index].duration = duration;
@@ -167,9 +185,9 @@ void setupDMD()
   setupDMDdata(5,1,str_clock_full, "",System5x7,1000,15000,-1);
   setupDMDdata(6,3,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
   setupDMDdata(7,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
-  setupDMDdata(8,3,"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(8,3,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
   setupDMDdata(9,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
-  setupDMDdata(10,3,"Utamakan sholat dalam keseharianmu", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(10,3,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
 
   Serial.println("DMD is coming");
 }
@@ -208,27 +226,39 @@ void taskDMD(void *parameter)
     //dmd.drawBox(0, 0, (32 * DISPLAYS_ACROSS) - 1, (16 * DISPLAYS_DOWN) - 1, GRAPHICS_TOGGLE);
 
     for(dmd_loop_index=0;dmd_loop_index<DMD_DATA_SIZE;dmd_loop_index++){
-      DMD_Data item = dmd_data_list[dmd_loop_index];
-      ++item.count;
+      DMD_Data * item = dmd_data_list+dmd_loop_index;
+      ++item->count;
       unsigned long start  = millis();
       dmd.clearScreen(true);
-      while(start + item.duration > millis()){
-        switch (item.type)
+
+      if(need_reset_dmd_index){
+        need_reset_dmd_index = false;
+        dmd_loop_index = 0;
+        continue;
+      }
+
+      while(start + item->duration > millis()){
+
+        if(need_reset_dmd_index){
+          break;
+        }
+
+        switch (item->type)
         {
         case 1: //jam
-          drawTextCenter(item.font, item.text1, 5);
+          drawTextCenter(item->font, item->text1, 5);
           break;
         case 2: //jws
-          drawTextCenter(item.font, item.text1, 1);
-          //Serial.println(item.text2);
-          drawTextCenter(item.font, item.text2, 9);
+          drawTextCenter(item->font, item->text1, 1);
+          drawTextCenter(item->font, item->text2, 9);
           break;
         case 3: //scrolling text
-          marqueeText(item.font, item.text1, 1);
+          Serial.println(item->text1);
+          marqueeText(item->font, item->text1, 1);
           break;
         case 4: //count down timer
           {
-            int counter = item.duration/1000;
+            int counter = item->duration/1000;
             int leftSeconds = counter;
             int hours = leftSeconds/3600;
             int minutes = 0;
@@ -242,14 +272,14 @@ void taskDMD(void *parameter)
             }
             seconds = leftSeconds;
 
-            dmd.selectFont(item.font);
+            dmd.selectFont(item->font);
             
             long start = millis();
             long timer = start;
-            int width = stringWidth(item.font,item.text1);
+            int width = stringWidth(item->font,item->text1);
             int posx = (32*DISPLAYS_ACROSS) - 1;
             while(counter >= 0){
-              if (millis() - start > item.delay){
+              if (millis() - start > item->delay){
                 if(seconds==-1){
                   seconds=59;
                   minutes--;
@@ -261,14 +291,14 @@ void taskDMD(void *parameter)
                 //display
                 char count_down[9];
                 sprintf_P(count_down, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-                drawTextCenter(item.font, count_down, 1);
+                drawTextCenter(item->font, count_down, 1);
                 seconds--;
                 counter--;
                 start = millis();
               }
 
               if (millis() - timer > 30){
-                dmd.drawString(--posx, 9, item.text1, strlen(item.text1), GRAPHICS_NORMAL);
+                dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                 if(posx < (-1*width)){
                   posx = (32*DISPLAYS_ACROSS) - 1;
                 }
@@ -280,15 +310,21 @@ void taskDMD(void *parameter)
         default:
           break;
         }
-        delay(item.delay);
+        delay(item->delay);
       }
-      if(item.max_count > 0 && item.count >= item.max_count){
+      if(item->max_count > 0 && item->count >= item->max_count){
         //reset struct to stop drawing in dmd
-        (*(dmd_data_list+dmd_loop_index)).count = 0;
-        (*(dmd_data_list+dmd_loop_index)).max_count = 1;
-        (*(dmd_data_list+dmd_loop_index)).delay = 0;
-        (*(dmd_data_list+dmd_loop_index)).duration = 0;
-        (*(dmd_data_list+dmd_loop_index)).type = 0;
+        item->count = 0;
+        item->max_count = 1;
+        item->delay = 0;
+        item->duration = 0;
+        item->type = 0;
+        if(item->need_free_text1){
+          free(item->text1);
+        }
+        if(item->need_free_text2){
+          free(item->text2);
+        }
       }
     }
     
@@ -490,16 +526,8 @@ const char index_html[] PROGMEM = R"rawliteral(
   </head><body>
   <form action="/get-setting">
     Scrolling Text: <input type="text" name="scrolltext">
-    <input type="submit" value="Submit">
+    <input type="submit" value="Notify">
   </form><br>
-  <form action="/get-setting">
-    input2: <input type="text" name="input2">
-    <input type="submit" value="Submit">
-  </form><br>
-  <form action="/get-setting">
-    input3: <input type="text" name="input3">
-    <input type="submit" value="Submit">
-  </form>
   <p>Brightness: <span id="brightnessPos"></span> %</p>
   <input type="range" min="0" max="255" value="20" class="slider" id="brightnessSlider" onchange="brightnessChange(this.value)"/>
   <script>
@@ -567,7 +595,10 @@ void taskWebServer(void *parameter)
   server.on("/get-setting", []()
             {
               String scrolltext = server.arg("scrolltext");
-              scrollingText = scrolltext;
+              char * info = (char *)malloc(sizeof(char)*(scrolltext.length()+1));
+              sprintf_P(info, (PGM_P)F("%s"), scrolltext.c_str());              
+              setupDMDdata(1,3,info,true,(char*)"",false,System5x7,1000,5000,1);
+              notifyNow();
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
             });
@@ -871,19 +902,19 @@ void taskCountDownJWS(void * parameter){
 
     memset(type_jws,0,sizeof(type_jws));
 
-    if(clock[3] <= subuh[3] || clock[3] > isya[3]){
+    if((clock[3] < subuh[3] && clock[3] >= 0) || (clock[3] >= isya[3] && clock[3] <=86400)){
       sprintf_P(type_jws, (PGM_P)F("subuh"));
       counter = sDistanceFromTimeToTime(clock[0],clock[1],clock[2],subuh[0],subuh[1],subuh[2]);
-    } else if(clock[3] <= dzuhur[3]){
+    } else if(clock[3] < dzuhur[3]){
       sprintf_P(type_jws, (PGM_P)F("dzuhur"));
       counter = dzuhur[3] - clock[3];
-    } else if(clock[3] <= ashar[3]){
+    } else if(clock[3] < ashar[3]){
       sprintf_P(type_jws, (PGM_P)F("ashar"));
       counter = ashar[3] - clock[3];
-    } else if(clock[3] <= maghrib[3]){
+    } else if(clock[3] < maghrib[3]){
       sprintf_P(type_jws, (PGM_P)F("maghrib"));
       counter = maghrib[3] - clock[3];
-    } else if(clock[3] <= isya[3]){
+    } else if(clock[3] < isya[3]){
       sprintf_P(type_jws, (PGM_P)F("isya"));
       counter = isya[3] - clock[3];
     }
