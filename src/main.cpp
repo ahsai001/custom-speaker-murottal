@@ -138,7 +138,7 @@ void marqueeText(const uint8_t *font, const char * text, int top){
     }
   }
 }
-void notifyNow(){
+void resetDMDIndex(){ //use this function to make show important message right now
   need_reset_dmd_index = true;
 }
 
@@ -598,7 +598,7 @@ void taskWebServer(void *parameter)
               char * info = (char *)malloc(sizeof(char)*(scrolltext.length()+1));
               sprintf_P(info, (PGM_P)F("%s"), scrolltext.c_str());              
               setupDMDdata(1,3,info,true,(char*)"",false,System5x7,1000,5000,1);
-              notifyNow();
+              resetDMDIndex();
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
             });
