@@ -168,7 +168,7 @@ void setupDMD()
   setupDMDdata(6,3,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
   setupDMDdata(7,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
   setupDMDdata(8,3,"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
-  //setupDMDdata(9,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
+  setupDMDdata(9,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
   setupDMDdata(10,3,"Utamakan sholat dalam keseharianmu", "",Arial_Black_16,1000,10000,-1);
 
   Serial.println("DMD is coming");
