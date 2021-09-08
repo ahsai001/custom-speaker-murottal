@@ -220,8 +220,8 @@ void taskDMD(void *parameter)
           break;
         case 2: //jws
           drawTextCenter(item.font, item.text1, 1);
-          Serial.println(item.text2);
-          //drawTextCenter(item.font, item.text2, 9);
+          //Serial.println(item.text2);
+          drawTextCenter(item.font, item.text2, 9);
           break;
         case 3: //scrolling text
           marqueeText(item.font, item.text1, 1);
