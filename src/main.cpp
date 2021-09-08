@@ -918,10 +918,10 @@ void taskCountDownJWS(void * parameter){
       //display
       sprintf_P(count_down_jws, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
       isCountdownJWSReady = true;
-      Serial.print("String Countdown : ");
-      Serial.print(type_jws);
-      Serial.print(" : ");
-      Serial.println(count_down_jws);
+      //Serial.print("String Countdown : ");
+      //Serial.print(type_jws);
+      //Serial.print(" : ");
+      //Serial.println(count_down_jws);
       seconds--;
       counter--;
       delay(1000);
