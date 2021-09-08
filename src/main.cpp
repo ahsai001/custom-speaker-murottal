@@ -139,7 +139,7 @@ void marqueeText(const uint8_t *font, const char * text, int top){
 void setupDMDdata(uint8_t index, uint8_t type, const char * text1, const char * text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
   dmd_data_list[index].type = type;
   dmd_data_list[index].text1 = text1;
-  dmd_data_list[index].text1 = text1;
+  dmd_data_list[index].text2 = text2;
   dmd_data_list[index].font = font;
   dmd_data_list[index].delay = delay;
   dmd_data_list[index].duration = duration;
@@ -168,7 +168,7 @@ void setupDMD()
   setupDMDdata(6,3,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
   setupDMDdata(7,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
   setupDMDdata(8,3,"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
-  setupDMDdata(9,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
+  //setupDMDdata(9,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
   setupDMDdata(10,3,"Utamakan sholat dalam keseharianmu", "",Arial_Black_16,1000,10000,-1);
 
   Serial.println("DMD is coming");
@@ -215,17 +215,18 @@ void taskDMD(void *parameter)
       while(start + item.duration > millis()){
         switch (item.type)
         {
-        case 1:
+        case 1: //jam
           drawTextCenter(item.font, item.text1, 5);
           break;
-        case 2:
+        case 2: //jws
           drawTextCenter(item.font, item.text1, 1);
-          drawTextCenter(item.font, item.text2, 9);
+          Serial.println(item.text2);
+          //drawTextCenter(item.font, item.text2, 9);
           break;
-        case 3:
+        case 3: //scrolling text
           marqueeText(item.font, item.text1, 1);
           break;
-        case 4:
+        case 4: //count down timer
           {
             int counter = item.duration/1000;
             int leftSeconds = counter;
@@ -246,7 +247,7 @@ void taskDMD(void *parameter)
             long start = millis();
             long timer = start;
             int width = stringWidth(item.font,item.text1);
-            int posx = 32*2 - 1;
+            int posx = (32*DISPLAYS_ACROSS) - 1;
             while(counter >= 0){
               if (millis() - start > item.delay){
                 if(seconds==-1){
@@ -269,7 +270,7 @@ void taskDMD(void *parameter)
               if (millis() - timer > 30){
                 dmd.drawString(--posx, 9, item.text1, strlen(item.text1), GRAPHICS_NORMAL);
                 if(posx < (-1*width)){
-                  posx = 32*2 - 1;
+                  posx = (32*DISPLAYS_ACROSS) - 1;
                 }
                 timer = millis();
               }
@@ -828,6 +829,7 @@ void taskJadwalSholat(void * parameter){
 }
 
 std::array<float, 4>  getArrayOfTime(char * time){
+  Serial.print("getArrayOfTime : ");
   Serial.print(time);
   const char delimiter[2] = ":";
   char * token = strtok(time, delimiter);
@@ -904,7 +906,7 @@ void taskCountDownJWS(void * parameter){
     }
     seconds = leftSeconds;
 
-    while(counter >= 0 && !(hours==0 && minutes==0 && seconds==0)){
+    while(counter >= 0){
       if(seconds==-1){
         seconds=59;
         minutes--;
@@ -916,10 +918,10 @@ void taskCountDownJWS(void * parameter){
       //display
       sprintf_P(count_down_jws, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
       isCountdownJWSReady = true;
-      //Serial.print("String Countdown : ");
-      //Serial.print(type_jws);
-      //Serial.print(" : ");
-      //Serial.println(count_down_jws);
+      Serial.print("String Countdown : ");
+      Serial.print(type_jws);
+      Serial.print(" : ");
+      Serial.println(count_down_jws);
       seconds--;
       counter--;
       delay(1000);
