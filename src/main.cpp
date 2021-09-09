@@ -30,7 +30,7 @@ TaskHandle_t taskKeepWiFiHandle;
 TaskHandle_t taskDMDHandle;
 TaskHandle_t taskClockHandle;
 TaskHandle_t taskJWSHandle;
-TaskHandle_t taskButtonHandle;
+TaskHandle_t taskButtonTouchHandle;
 
 Preferences preferences;
 
@@ -1007,15 +1007,18 @@ void taskCountDownJWS(void * parameter){
 //=========================================================================
 //==================================   Task Button / Touch Handle  ============================
 //=========================================================================
-void taskButton(void * parameter){
+void taskButtonTouch(void * parameter){
   for(;;){
-    bool isTouched = touchRead(33) < 20;
+    uint16_t touchValue = touchRead(33);
+    bool isTouched = touchValue < 20;
+    Serial.print("Touch Value");
+    Serial.println(touchValue);
     if(isTouched){
       //remove ssid & password in preferences setting
-      preferences.remove("ssid");
-      preferences.remove("password");
-      Serial.println("Restarting after remove wifi credential");
-      ESP.restart();
+      //preferences.remove("ssid");
+      //preferences.remove("password");
+      //Serial.println("Restarting after remove wifi credential");
+      //ESP.restart();
     }
     delay(2000);
   }
@@ -1043,6 +1046,7 @@ void setup()
 {
   pinMode(built_in_led, OUTPUT);
   Serial.begin(115200);
+  delay(1000); // give me time to bring up serial monitor
   preferences.begin("settings", false);
   ssid = preferences.getString("ssid","");
   password = preferences.getString("password","");
@@ -1054,12 +1058,12 @@ void setup()
   isSPIFFSReady = true;
 
   xTaskCreatePinnedToCore(
-      taskButton,  // Function that should be called
+      taskButtonTouch,  // Function that should be called
       "Button/Touch Action",   // Name of the task (for debugging)
       1000,           // Stack size (bytes)
       NULL,           // Parameter to pass
       1,              // Task priority
-      &taskButtonHandle, // Task handle
+      &taskButtonTouchHandle, // Task handle
       CONFIG_ARDUINO_RUNNING_CORE);
 
   if(ssid.length() <= 0 || password.length() <= 0){
