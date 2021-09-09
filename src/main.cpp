@@ -32,13 +32,13 @@ TaskHandle_t taskClockHandle;
 TaskHandle_t taskJWSHandle;
 TaskHandle_t taskButtonTouchHandle;
 
-Preferences preferences;
+static Preferences preferences;
 
 int h24 = 12; //hours in 24 format
 int h = 12; // hours in 12 format
 int m = 0; //minutes
 int s = 0; //seconds
-char str_clock_full[9] = "--:--:--"; //used by dmd task
+static char str_clock_full[9] = "--:--:--"; //used by dmd task
 char str_clock[6] = "--:--"; //used by dmd task
 char timeDay[3];
 char timeMonth[10];
@@ -62,8 +62,8 @@ char data_jadwal_ashar[9];
 char data_jadwal_maghrib[9];
 char data_jadwal_isya[9];
 
-char type_jws[8] = "sholat"; //subuh, dzuhur, ashar, maghrib, isya
-char count_down_jws[9] = "--:--:--"; //04:30:00
+static char type_jws[8] = "sholat"; //subuh, dzuhur, ashar, maghrib, isya
+static char count_down_jws[9] = "--:--:--"; //04:30:00
 
 //22.30 - 23.45 : 1 jam + 15 menit
 //22.30 - 23.15 : 1 jam + -15 menit
@@ -247,7 +247,10 @@ void taskDMD(void *parameter)
         dmd_loop_index = 0;
         continue;
       }
-
+      Serial.print("DMD start : ");
+      Serial.println(item->type);
+      Serial.print("DMD text1 : ");
+      Serial.println(item->text1);
       while(start + item->duration > millis()){
 
         if(need_reset_dmd_loop_index){
@@ -321,6 +324,7 @@ void taskDMD(void *parameter)
           break;
         }
         delay(item->delay);
+        Serial.println("DMD inside");
       }
       if(item->max_count > 0 && item->count >= item->max_count){
         //reset struct to stop drawing in dmd
@@ -336,7 +340,9 @@ void taskDMD(void *parameter)
           free(item->text2);
         }
       }
+      Serial.println("DMD outside");
     }
+    Serial.println("DMD close");
     
 
     /*
@@ -661,8 +667,8 @@ void taskWebServer(void *parameter)
       String password = server.arg("password");
       preferences.putString("ssid", ssid);
       preferences.putString("password", password);
-      server.send(200, "text/plain", "setting wifi berhasil");
-      ESP.restart();
+      server.send(200, "text/plain", "setting wifi berhasil, silakan restart");
+      //ESP.restart();
     } else {
       server.send(200, "text/html", index_html_ap);
     }
@@ -671,9 +677,8 @@ void taskWebServer(void *parameter)
   server.on("/forgetwifi",[](){
       preferences.remove("ssid");
       preferences.remove("password");
-      server.send(200, "text/plain", "forget wifi berhasil & restart in 3 seconds");
-      delay(3000);
-      ESP.restart();
+      server.send(200, "text/plain", "forget wifi berhasil, silakan restart");
+      //ESP.restart();
   });
 
   server.onNotFound(handleWebNotFound);
@@ -1061,8 +1066,8 @@ void setup()
   Serial.begin(115200);
   delay(1000); // give me time to bring up serial monitor
   preferences.begin("settings", false);
-  ssid = preferences.getString("ssid","");
-  password = preferences.getString("password","");
+  ssid = preferences.getString("ssid","3mbd3vk1d-2");
+  password = preferences.getString("password","marsupiarmadomah3716");
 
   while(!SPIFFS.begin(true)){
     Serial.println("An Error has occurred while mounting SPIFFS");
