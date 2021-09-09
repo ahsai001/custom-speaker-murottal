@@ -30,6 +30,7 @@ TaskHandle_t taskKeepWiFiHandle;
 TaskHandle_t taskDMDHandle;
 TaskHandle_t taskClockHandle;
 TaskHandle_t taskJWSHandle;
+TaskHandle_t taskCountdownJWSHandle;
 TaskHandle_t taskButtonTouchHandle;
 
 static Preferences preferences;
@@ -247,10 +248,10 @@ void taskDMD(void *parameter)
         dmd_loop_index = 0;
         continue;
       }
-      Serial.print("DMD start : ");
-      Serial.println(item->type);
-      Serial.print("DMD text1 : ");
-      Serial.println(item->text1);
+      //Serial.print("DMD start : ");
+      //Serial.println(item->type);
+      //Serial.print("DMD text1 : ");
+      //Serial.println(item->text1);
       while(start + item->duration > millis()){
 
         if(need_reset_dmd_loop_index){
@@ -324,7 +325,7 @@ void taskDMD(void *parameter)
           break;
         }
         delay(item->delay);
-        Serial.println("DMD inside");
+        //Serial.println("DMD inside");
       }
       if(item->max_count > 0 && item->count >= item->max_count){
         //reset struct to stop drawing in dmd
@@ -340,9 +341,9 @@ void taskDMD(void *parameter)
           free(item->text2);
         }
       }
-      Serial.println("DMD outside");
+      //Serial.println("DMD outside");
     }
-    Serial.println("DMD close");
+    //Serial.println("DMD close");
     
 
     /*
@@ -662,23 +663,23 @@ void taskWebServer(void *parameter)
             });
 
   server.on("/setwifi",[](){
-    if (server.hasArg("ssid")&& server.hasArg("password")) {
-      String ssid = server.arg("ssid");
-      String password = server.arg("password");
-      preferences.putString("ssid", ssid);
-      preferences.putString("password", password);
-      server.send(200, "text/plain", "setting wifi berhasil, silakan restart");
-      //ESP.restart();
-    } else {
-      server.send(200, "text/html", index_html_ap);
-    }
+            if (server.hasArg("ssid")&& server.hasArg("password")) {
+              String ssid = server.arg("ssid");
+              String password = server.arg("password");
+              preferences.putString("ssid", ssid);
+              preferences.putString("password", password);
+              server.send(200, "text/plain", "setting wifi berhasil, silakan restart");
+              ESP.restart();
+            } else {
+              server.send(200, "text/html", index_html_ap);
+            }
   });
 
   server.on("/forgetwifi",[](){
-      preferences.remove("ssid");
-      preferences.remove("password");
-      server.send(200, "text/plain", "forget wifi berhasil, silakan restart");
-      //ESP.restart();
+            preferences.remove("ssid");
+            preferences.remove("password");
+            server.send(200, "text/plain", "forget wifi berhasil, silakan restart");
+            //ESP.restart();
   });
 
   server.onNotFound(handleWebNotFound);
@@ -914,8 +915,8 @@ void taskJadwalSholat(void * parameter){
 }
 
 std::array<float, 4>  getArrayOfTime(char * time){
-  Serial.print("getArrayOfTime : ");
-  Serial.print(time);
+  //Serial.print("getArrayOfTime : ");
+  //Serial.print(time);
   const char delimiter[2] = ":";
   char * token = strtok(time, delimiter);
   std::array<float, 4> as;
@@ -1066,14 +1067,16 @@ void setup()
   Serial.begin(115200);
   delay(1000); // give me time to bring up serial monitor
   preferences.begin("settings", false);
-  ssid = preferences.getString("ssid","3mbd3vk1d-2");
-  password = preferences.getString("password","marsupiarmadomah3716");
+  //ssid = preferences.getString("ssid","3mbd3vk1d-2");
+  //password = preferences.getString("password","marsupiarmadomah3716");
+  ssid = preferences.getString("ssid","");
+  password = preferences.getString("password","");
 
-  while(!SPIFFS.begin(true)){
-    Serial.println("An Error has occurred while mounting SPIFFS");
-    return;
-  }
-  isSPIFFSReady = true;
+  // while(!SPIFFS.begin(true)){
+  //   Serial.println("An Error has occurred while mounting SPIFFS");
+  //   return;
+  // }
+  // isSPIFFSReady = true;
 
   // xTaskCreatePinnedToCore(
   //     taskButtonTouch,  // Function that should be called
@@ -1090,6 +1093,11 @@ void setup()
     IPAddress NMask = {255, 255, 255, 0};
     WiFi.softAPConfig(IP, IP, NMask);
     WiFi.softAP("Speaker Murottal AP", "qwerty654321");
+    if (MDNS.begin("speaker-murottal"))
+    {
+      Serial.println("speaker-murottal.local is available");
+    }
+    startTaskToggleLED();
   } else {
     xTaskCreatePinnedToCore(
         taskKeepWiFiAlive,  // Function that should be called
@@ -1128,19 +1136,19 @@ void setup()
         5000,           // Stack size (bytes)
         NULL,           // Parameter to pass
         1,              // Task priority
-        &taskJWSHandle, // Task handle
+        &taskCountdownJWSHandle, // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE);
+
+    delay(5000);
+    xTaskCreatePinnedToCore(
+        taskDMD,        // Function that should be called
+        "Display DMD",  // Name of the task (for debugging)
+        5000,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        1,              // Task priority
+        &taskDMDHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
   }
-
-  delay(5000);
-  xTaskCreatePinnedToCore(
-      taskDMD,        // Function that should be called
-      "Display DMD",  // Name of the task (for debugging)
-      5000,           // Stack size (bytes)
-      NULL,           // Parameter to pass
-      1,              // Task priority
-      &taskDMDHandle, // Task handle
-      CONFIG_ARDUINO_RUNNING_CORE);
 
   delay(5000);
   xTaskCreatePinnedToCore(
@@ -1152,7 +1160,7 @@ void setup()
       &taskWebHandle, // Task handle
       CONFIG_ARDUINO_RUNNING_CORE);
 
-  vTaskDelete(NULL);
+  //vTaskDelete(NULL);
 }
 
 void loop()
