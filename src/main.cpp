@@ -13,6 +13,8 @@
 #include "fonts/Arial_black_16.h"
 #include "HTTPClient.h"
 #include "ArduinoJson.h"
+#include <nvs_flash.h>
+#include <Preferences.h>
 
 
 
@@ -28,14 +30,16 @@ TaskHandle_t taskKeepWiFiHandle;
 TaskHandle_t taskDMDHandle;
 TaskHandle_t taskClockHandle;
 TaskHandle_t taskJWSHandle;
+TaskHandle_t taskButtonHandle;
 
+Preferences preferences;
 
 int h24 = 12; //hours in 24 format
 int h = 12; // hours in 12 format
 int m = 0; //minutes
 int s = 0; //seconds
-char str_clock_full[9]; //used by dmd task
-char str_clock[6]; //used by dmd task
+char str_clock_full[9] = "--:--:--"; //used by dmd task
+char str_clock[6] = "--:--"; //used by dmd task
 char timeDay[3];
 char timeMonth[10];
 char timeYear[5];
@@ -47,10 +51,10 @@ bool isClockReady = false;
 bool isDMDReady = false;
 bool isJWSReady = false;
 bool isCountdownJWSReady = false;
+bool isSPIFFSReady = false;
 
 const uint8_t built_in_led = 2;
 const uint8_t relay = 26;
-
 
 char data_jadwal_subuh[9];
 char data_jadwal_dzuhur[9];
@@ -58,8 +62,8 @@ char data_jadwal_ashar[9];
 char data_jadwal_maghrib[9];
 char data_jadwal_isya[9];
 
-char type_jws[8]; //subuh, dzuhur, ashar, maghrib, isya
-char count_down_jws[9]; //04:30:00
+char type_jws[8] = "sholat"; //subuh, dzuhur, ashar, maghrib, isya
+char count_down_jws[9] = "--:--:--"; //04:30:00
 
 //22.30 - 23.45 : 1 jam + 15 menit
 //22.30 - 23.15 : 1 jam + -15 menit
@@ -90,6 +94,13 @@ void delayUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
     delay(delta);
 }
 
+void eraseNVS(){
+  nvs_flash_erase(); // erase the NVS partition and...
+  nvs_flash_init(); // initialize the NVS partition.
+  ESP.restart();
+  while(true);
+}
+
 //=========================================================================
 //==================================   Task DMD  ==========================
 //=========================================================================
@@ -109,7 +120,7 @@ struct DMD_Data{
   int max_count = 1; //jumlah kemunculan
   int count = 0; 
 };
-bool need_reset_dmd_index = false;
+bool need_reset_dmd_loop_index = false;
 int dmd_loop_index = 0; //we can change this runtime
 struct DMD_Data dmd_data_list[DMD_DATA_SIZE]; //index 0 - 5 for important message
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN);
@@ -138,8 +149,8 @@ void marqueeText(const uint8_t *font, const char * text, int top){
     }
   }
 }
-void resetDMDIndex(){ //use this function to make show important message right now
-  need_reset_dmd_index = true;
+void resetDMDLoopIndex(){ //use this function to make show important message right now
+  need_reset_dmd_loop_index = true;
 }
 
 void setupDMDdata(uint8_t index, uint8_t type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
@@ -231,15 +242,15 @@ void taskDMD(void *parameter)
       unsigned long start  = millis();
       dmd.clearScreen(true);
 
-      if(need_reset_dmd_index){
-        need_reset_dmd_index = false;
+      if(need_reset_dmd_loop_index){
+        need_reset_dmd_loop_index = false;
         dmd_loop_index = 0;
         continue;
       }
 
       while(start + item->duration > millis()){
 
-        if(need_reset_dmd_index){
+        if(need_reset_dmd_loop_index){
           break;
         }
 
@@ -253,7 +264,6 @@ void taskDMD(void *parameter)
           drawTextCenter(item->font, item->text2, 9);
           break;
         case 3: //scrolling text
-          Serial.println(item->text1);
           marqueeText(item->font, item->text1, 1);
           break;
         case 4: //count down timer
@@ -447,8 +457,8 @@ void stopTaskToggleLED()
 //=====================================================================================
 //==================================   Task Keep WiFi Alive  ==========================
 //=====================================================================================
-const char *ssid = "3mbd3vk1d-2";
-const char *password = "marsupiarmadomah3716";
+String ssid = "";
+String password = "";
 #define WIFI_TIMEOUT_MS 20000      // 20 second WiFi connection timeout
 #define WIFI_RECOVER_TIME_MS 30000 // Wait 30 seconds after a failed connection attempt
 
@@ -461,12 +471,13 @@ void taskKeepWiFiAlive(void *parameter)
       delay(10000);
       continue;
     }
+
     isWiFiReady = false;
     startTaskToggleLED();
 
     Serial.println("[WIFI] Connecting");
     WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
+    WiFi.begin(ssid.c_str(), password.c_str());
 
     unsigned long startAttemptTime = millis();
 
@@ -505,6 +516,30 @@ void taskKeepWiFiAlive(void *parameter)
 //================================================================================
 //==================================   Task Web Server  ==========================
 //================================================================================
+const char index_html_ap[] PROGMEM = R"rawliteral(
+  <!DOCTYPE HTML>
+<html>
+ <head>
+  <meta content="text/html; charset=ISO-8859-1" http-equiv="content-type">
+  <meta name = "viewport" content = "width = device-width, initial-scale = 1.0, maximum-scale = 1.0, user-scalable=0">
+  <title>WiFi Creds Form</title>
+  <style>
+   body { background-color: #808080; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; text-align:center; }
+  </style>
+ </head>
+ <body>
+  <h3>Enter your WiFi credentials</h3>
+  <form action="/setwifi" method="post">
+  <p>
+   <label>SSID:&nbsp;</label>
+   <input maxlength="30" name="ssid"><br>
+   <label>Key:&nbsp;&nbsp;&nbsp;&nbsp;</label><input maxlength="30" name="password"><br><br>
+   <input type="submit" value="Save"> 
+  </p>
+  </form>
+ </body>
+</html>
+)rawliteral";
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
@@ -598,7 +633,7 @@ void taskWebServer(void *parameter)
               char * info = (char *)malloc(sizeof(char)*(scrolltext.length()+1));
               sprintf_P(info, (PGM_P)F("%s"), scrolltext.c_str());              
               setupDMDdata(1,3,info,true,(char*)"",false,System5x7,1000,5000,1);
-              resetDMDIndex();
+              resetDMDLoopIndex();
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
             });
@@ -610,19 +645,24 @@ void taskWebServer(void *parameter)
               server.send(404, "text/plain", "ubah brigtness berhasil");
             });
 
-  server.on("/on", []()
+  server.on("/restart", []()
             {
-              //digitalWrite(built_in_led, 1);
-              //digitalWrite(relay, 1);
-              server.send(200, "text/plain", "relay on");
+              ESP.restart();
+              server.send(200, "text/plain", "restart ESP");
             });
 
-  server.on("/off", []()
-            {
-              //digitalWrite(built_in_led, 0);
-              //digitalWrite(relay, 0);
-              server.send(200, "text/plain", "relay off");
-            });
+  server.on("/setwifi",[](){
+    if (server.hasArg("ssid")&& server.hasArg("password")) {
+      String ssid = server.arg("ssid");
+      String password = server.arg("password");
+      preferences.putString("ssid", ssid);
+      preferences.putString("password", password);
+      server.send(200, "text/plain", "setting wifi berhasil");
+      ESP.restart();
+    } else {
+      server.send(200, "text/html", index_html_ap);
+    }
+  });
 
   server.onNotFound(handleWebNotFound);
 
@@ -695,9 +735,6 @@ void taskClock(void * parameter)
   h = timeinfo.tm_hour > 12 ? timeinfo.tm_hour-12 : timeinfo.tm_hour;
   m = timeinfo.tm_min;
   s = timeinfo.tm_sec;
-
-  int state1 = 1;
-  int state2 = 1;
 
   for (;;)
   {
@@ -966,6 +1003,39 @@ void taskCountDownJWS(void * parameter){
   }
 }
 
+
+//=========================================================================
+//==================================   Task Button / Touch Handle  ============================
+//=========================================================================
+void taskButton(void * parameter){
+  for(;;){
+    bool isTouched = touchRead(33) < 20;
+    if(isTouched){
+      //remove ssid & password in preferences setting
+      preferences.remove("ssid");
+      preferences.remove("password");
+      Serial.println("Restarting after remove wifi credential");
+      ESP.restart();
+    }
+    delay(2000);
+  }
+}
+
+
+//=========================================================================
+//==================================   SPIFFS  ============================
+//=========================================================================
+
+void listAllFiles(){
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  while(file){
+      Serial.print("FILE: ");
+      Serial.println(file.name());
+      file = root.openNextFile();
+  }
+}
+
 //=========================================================================
 //==================================   Main App  ==========================
 //=========================================================================
@@ -973,26 +1043,72 @@ void setup()
 {
   pinMode(built_in_led, OUTPUT);
   Serial.begin(115200);
+  preferences.begin("settings", false);
+  ssid = preferences.getString("ssid","");
+  password = preferences.getString("password","");
+
+  while(!SPIFFS.begin(true)){
+    Serial.println("An Error has occurred while mounting SPIFFS");
+    return;
+  }
+  isSPIFFSReady = true;
 
   xTaskCreatePinnedToCore(
-      taskKeepWiFiAlive,  // Function that should be called
-      "Keep WiFi Alive",  // Name of the task (for debugging)
-      5000,               // Stack size (bytes)
-      NULL,               // Parameter to pass
-      1,                  // Task priority
-      &taskKeepWiFiHandle, // Task handle
-      CONFIG_ARDUINO_RUNNING_CORE
-  );
-
-  delay(5000);
-  xTaskCreatePinnedToCore(
-      taskClock,  // Function that should be called
-      "Clock",   // Name of the task (for debugging)
-      5000,           // Stack size (bytes)
+      taskButton,  // Function that should be called
+      "Button/Touch Action",   // Name of the task (for debugging)
+      1000,           // Stack size (bytes)
       NULL,           // Parameter to pass
       1,              // Task priority
-      &taskClockHandle, // Task handle
-      0);
+      &taskButtonHandle, // Task handle
+      CONFIG_ARDUINO_RUNNING_CORE);
+
+  if(ssid.length() <= 0 || password.length() <= 0){
+    WiFi.mode(WIFI_AP);
+    IPAddress IP = {192, 168, 48, 81};
+    IPAddress NMask = {255, 255, 255, 0};
+    WiFi.softAPConfig(IP, IP, NMask);
+    WiFi.softAP("Speaker Murottal AP", "qwerty654321");
+  } else {
+    xTaskCreatePinnedToCore(
+        taskKeepWiFiAlive,  // Function that should be called
+        "Keep WiFi Alive",  // Name of the task (for debugging)
+        5000,               // Stack size (bytes)
+        NULL,               // Parameter to pass
+        1,                  // Task priority
+        &taskKeepWiFiHandle, // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE
+    );
+
+    delay(5000);
+    xTaskCreatePinnedToCore(
+        taskClock,  // Function that should be called
+        "Clock",   // Name of the task (for debugging)
+        5000,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        1,              // Task priority
+        &taskClockHandle, // Task handle
+        0);
+
+    delay(5000);
+    xTaskCreatePinnedToCore(
+        taskJadwalSholat,  // Function that should be called
+        "Jadwal Sholat",   // Name of the task (for debugging)
+        10000,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        1,              // Task priority
+        &taskJWSHandle, // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE);
+
+    delay(5000);
+    xTaskCreatePinnedToCore(
+        taskCountDownJWS,  // Function that should be called
+        "Countdown Jadwal Sholat",   // Name of the task (for debugging)
+        5000,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        1,              // Task priority
+        &taskJWSHandle, // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE);
+  }
 
   delay(5000);
   xTaskCreatePinnedToCore(
@@ -1012,27 +1128,6 @@ void setup()
       NULL,           // Parameter to pass
       1,              // Task priority
       &taskWebHandle, // Task handle
-      CONFIG_ARDUINO_RUNNING_CORE);
-
-
-  delay(5000);
-  xTaskCreatePinnedToCore(
-      taskJadwalSholat,  // Function that should be called
-      "Jadwal Sholat",   // Name of the task (for debugging)
-      10000,           // Stack size (bytes)
-      NULL,           // Parameter to pass
-      1,              // Task priority
-      &taskJWSHandle, // Task handle
-      CONFIG_ARDUINO_RUNNING_CORE);
-
-  delay(5000);
-  xTaskCreatePinnedToCore(
-      taskCountDownJWS,  // Function that should be called
-      "Countdown Jadwal Sholat",   // Name of the task (for debugging)
-      5000,           // Stack size (bytes)
-      NULL,           // Parameter to pass
-      1,              // Task priority
-      &taskJWSHandle, // Task handle
       CONFIG_ARDUINO_RUNNING_CORE);
 
   vTaskDelete(NULL);
