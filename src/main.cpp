@@ -537,6 +537,10 @@ const char index_html_ap[] PROGMEM = R"rawliteral(
    <input type="submit" value="Save"> 
   </p>
   </form>
+  <form action="/forgetwifi" method="post">
+  <p>
+   <input type="submit" value="Forget wifi"> 
+  </p>
  </body>
 </html>
 )rawliteral";
@@ -662,6 +666,14 @@ void taskWebServer(void *parameter)
     } else {
       server.send(200, "text/html", index_html_ap);
     }
+  });
+
+  server.on("/forgetwifi",[](){
+      preferences.remove("ssid");
+      preferences.remove("password");
+      server.send(200, "text/plain", "forget wifi berhasil & restart in 3 seconds");
+      delay(3000);
+      ESP.restart();
   });
 
   server.onNotFound(handleWebNotFound);
@@ -1011,16 +1023,17 @@ void taskButtonTouch(void * parameter){
   for(;;){
     uint16_t touchValue = touchRead(33);
     bool isTouched = touchValue < 20;
-    Serial.print("Touch Value");
-    Serial.println(touchValue);
+    //Serial.print("Touch Value : ");
+    //Serial.println(touchValue);
     if(isTouched){
       //remove ssid & password in preferences setting
       //preferences.remove("ssid");
       //preferences.remove("password");
-      //Serial.println("Restarting after remove wifi credential");
+      Serial.println("Restarting after remove wifi credential");
+      //delay(3000);
       //ESP.restart();
     }
-    delay(2000);
+    delay(1000);
   }
 }
 
@@ -1057,14 +1070,14 @@ void setup()
   }
   isSPIFFSReady = true;
 
-  xTaskCreatePinnedToCore(
-      taskButtonTouch,  // Function that should be called
-      "Button/Touch Action",   // Name of the task (for debugging)
-      1000,           // Stack size (bytes)
-      NULL,           // Parameter to pass
-      1,              // Task priority
-      &taskButtonTouchHandle, // Task handle
-      CONFIG_ARDUINO_RUNNING_CORE);
+  // xTaskCreatePinnedToCore(
+  //     taskButtonTouch,  // Function that should be called
+  //     "Button/Touch Action",   // Name of the task (for debugging)
+  //     1000,           // Stack size (bytes)
+  //     NULL,           // Parameter to pass
+  //     1,              // Task priority
+  //     &taskButtonTouchHandle, // Task handle
+  //     CONFIG_ARDUINO_RUNNING_CORE);
 
   if(ssid.length() <= 0 || password.length() <= 0){
     WiFi.mode(WIFI_AP);
