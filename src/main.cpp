@@ -29,6 +29,7 @@ TaskHandle_t taskWebHandle;
 TaskHandle_t taskKeepWiFiHandle;
 TaskHandle_t taskDMDHandle;
 TaskHandle_t taskClockHandle;
+TaskHandle_t taskDateHandle;
 TaskHandle_t taskJWSHandle;
 TaskHandle_t taskCountdownJWSHandle;
 TaskHandle_t taskButtonTouchHandle;
@@ -40,15 +41,17 @@ int h = 12; // hours in 12 format
 int m = 0; //minutes
 int s = 0; //seconds
 static char str_clock_full[9] = "--:--:--"; //used by dmd task
-char str_clock[6] = "--:--"; //used by dmd task
-char timeDay[3];
-char timeMonth[10];
-char timeYear[5];
+static char str_date[26] = "Minggu, 10 September 2021"; //used by dmd task
+// char timeDay[3];
+// char timeMonth[10];
+// char timeYear[5];
 int day;
 int month;
 int year;
+int weekday;
 bool isWiFiReady = false;
 bool isClockReady = false;
+bool isDateReady = false;
 bool isDMDReady = false;
 bool isJWSReady = false;
 bool isCountdownJWSReady = false;
@@ -109,8 +112,12 @@ void eraseNVS(){
 #define DISPLAYS_DOWN 1
 #define DMD_DATA_SIZE 20
 
+enum DMDType {
+  DATETIME, JWS, SCROLLINGTEXT, COUNTDOWN, COUNTUP
+};
+
 struct DMD_Data{
-  int type = 0; //1:jam, 2:jws, 3:scrollingtext, 4:countdown
+  int type = 0; //1:jam, 2:jws, 3:scrollingtext, 4:countdown, 5:countup
   char * text1;
   bool need_free_text1 = false;
   char * text2;
@@ -154,7 +161,7 @@ void resetDMDLoopIndex(){ //use this function to make show important message rig
   need_reset_dmd_loop_index = true;
 }
 
-void setupDMDdata(uint8_t index, uint8_t type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
+void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
   dmd_data_list[index].type = type;
   dmd_data_list[index].text1 = (char*)text1;
   dmd_data_list[index].need_free_text1 = need_free_text1;
@@ -166,7 +173,7 @@ void setupDMDdata(uint8_t index, uint8_t type, const char * text1, bool need_fre
   dmd_data_list[index].max_count = max_count;
 }
 
-void setupDMDdata(uint8_t index, uint8_t type, const char * text1, const char * text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
+void setupDMDdata(uint8_t index, DMDType type, const char * text1, const char * text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
   dmd_data_list[index].type = type;
   dmd_data_list[index].text1 = (char*)text1;
   dmd_data_list[index].text2 = (char*)text2;
@@ -194,12 +201,12 @@ void setupDMD()
   dmd.clearScreen(true);
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
-  setupDMDdata(5,1,str_clock_full, "",System5x7,1000,15000,-1);
-  setupDMDdata(6,3,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
-  setupDMDdata(7,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
-  setupDMDdata(8,3,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
-  setupDMDdata(9,2,count_down_jws, type_jws,System5x7,1000,10000,-1);
-  setupDMDdata(10,3,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(5,DATETIME,str_clock_full, str_date,System5x7,1000,15000,-1);
+  setupDMDdata(6,SCROLLINGTEXT,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(7,JWS,count_down_jws, type_jws,System5x7,1000,10000,-1);
+  setupDMDdata(8,SCROLLINGTEXT,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(9,JWS,count_down_jws, type_jws,System5x7,1000,10000,-1);
+  setupDMDdata(10,SCROLLINGTEXT,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
 
   Serial.println("DMD is coming");
 }
@@ -248,84 +255,152 @@ void taskDMD(void *parameter)
         dmd_loop_index = 0;
         continue;
       }
-      //Serial.print("DMD start : ");
-      //Serial.println(item->type);
-      //Serial.print("DMD text1 : ");
-      //Serial.println(item->text1);
       while(start + item->duration > millis()){
-
         if(need_reset_dmd_loop_index){
           break;
         }
 
         switch (item->type)
         {
-        case 1: //jam
-          drawTextCenter(item->font, item->text1, 5);
-          break;
-        case 2: //jws
-          drawTextCenter(item->font, item->text1, 1);
-          drawTextCenter(item->font, item->text2, 9);
-          break;
-        case 3: //scrolling text
-          marqueeText(item->font, item->text1, 1);
-          break;
-        case 4: //count down timer
-          {
-            int counter = item->duration/1000;
-            int leftSeconds = counter;
-            int hours = leftSeconds/3600;
-            int minutes = 0;
-            int seconds = 0;
-            if(hours > 0){
-              leftSeconds = leftSeconds % 3600;
-            }
-            minutes = leftSeconds/60;
-            if(minutes > 0){
-              leftSeconds = leftSeconds % 60;
-            }
-            seconds = leftSeconds;
-
-            dmd.selectFont(item->font);
-            
-            long start = millis();
-            long timer = start;
-            int width = stringWidth(item->font,item->text1);
-            int posx = (32*DISPLAYS_ACROSS) - 1;
-            while(counter >= 0){
-              if (millis() - start > item->delay){
-                if(seconds==-1){
-                  seconds=59;
-                  minutes--;
-                }
-                if(minutes==-1){
-                  minutes=59;
-                  hours--;
-                }
-                //display
-                char count_down[9];
-                sprintf_P(count_down, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-                drawTextCenter(item->font, count_down, 1);
-                seconds--;
-                counter--;
-                start = millis();
-              }
-
-              if (millis() - timer > 30){
-                dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
-                if(posx < (-1*width)){
-                  posx = (32*DISPLAYS_ACROSS) - 1;
-                }
-                timer = millis();
+          case DATETIME: //jam, hari, tanggal, bulan, tahun
+            {
+              int counter = item->duration/1000;
+              unsigned long start = millis();
+              unsigned long timer = start;
+              dmd.selectFont(item->font);
+              int width = stringWidth(item->font,item->text2);
+              int posx = (32*DISPLAYS_ACROSS) - 1;
+              while(counter >= 0){
+                  if(need_reset_dmd_loop_index){
+                    break;
+                  }
+                  if (millis() - start > item->delay){   
+                    drawTextCenter(item->font, item->text1, 1);
+                    start = millis();
+                    counter--;
+                  }
+                  if (millis() - timer > 30){
+                    dmd.drawString(--posx, 9, item->text2, strlen(item->text2), GRAPHICS_NORMAL);
+                    if(posx < (-1*width)){
+                      posx = (32*DISPLAYS_ACROSS) - 1;
+                    }
+                    timer = millis();
+                  }
               }
             }
-          }
-          break;
-        default:
-          break;
+            break;
+          case JWS: //jws
+            drawTextCenter(item->font, item->text1, 1); //count down in task "count down jws"
+            drawTextCenter(item->font, item->text2, 9); 
+            break;
+          case SCROLLINGTEXT: //scrolling text
+            marqueeText(item->font, item->text1, 1);
+            break;
+          case COUNTDOWN: //count down timer
+            {
+              int counter = item->duration/1000;
+              int leftSeconds = counter;
+              int hours = leftSeconds/3600;
+              int minutes = 0;
+              int seconds = 0;
+              if(hours > 0){
+                leftSeconds = leftSeconds % 3600;
+              }
+              minutes = leftSeconds/60;
+              if(minutes > 0){
+                leftSeconds = leftSeconds % 60;
+              }
+              seconds = leftSeconds;
+
+              dmd.selectFont(item->font);
+              
+              unsigned long start = millis();
+              unsigned long timer = start;
+              int width = stringWidth(item->font,item->text1);
+              int posx = (32*DISPLAYS_ACROSS) - 1;
+              while(counter >= 0){
+                if(need_reset_dmd_loop_index){
+                  break;
+                }
+
+                if (millis() - start > item->delay){
+                  if(seconds==-1){
+                    seconds=59;
+                    minutes--;
+                  }
+                  if(minutes==-1){
+                    minutes=59;
+                    hours--;
+                  }
+                  //display
+                  char count_down[9];
+                  sprintf_P(count_down, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
+                  drawTextCenter(item->font, count_down, 1);
+                  seconds--;
+                  counter--;
+                  start = millis();
+                }
+
+                if (millis() - timer > 30){
+                  dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
+                  if(posx < (-1*width)){
+                    posx = (32*DISPLAYS_ACROSS) - 1;
+                  }
+                  timer = millis();
+                }
+              }
+            }
+            break;
+          case COUNTUP: //count up timer
+            {
+              int counter = item->duration/1000;
+              int hours = 0;
+              int minutes = 0;
+              int seconds = 0;
+
+              dmd.selectFont(item->font);
+              
+              unsigned long start = millis();
+              unsigned long timer = start;
+              int width = stringWidth(item->font,item->text1);
+              int posx = (32*DISPLAYS_ACROSS) - 1;
+              int countup = 0;
+              while(countup <= counter){
+                if(need_reset_dmd_loop_index){
+                  break;
+                }
+                if (millis() - start > item->delay){
+                  if(seconds==61){
+                    seconds=1;
+                    minutes++;
+                  }
+                  if(minutes==61){
+                    minutes=1;
+                    hours++;
+                  }
+                  //display
+                  char count_up[9];
+                  sprintf_P(count_up, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
+                  drawTextCenter(item->font, count_up, 1);
+                  seconds++;
+                  countup++;
+                  start = millis();
+                }
+
+                if (millis() - timer > 30){
+                  dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
+                  if(posx < (-1*width)){
+                    posx = (32*DISPLAYS_ACROSS) - 1;
+                  }
+                  timer = millis();
+                }
+              }
+            }
+            break;
+          default:
+            break;
         }
         delay(item->delay);
-        //Serial.println("DMD inside");
       }
       if(item->max_count > 0 && item->count >= item->max_count){
         //reset struct to stop drawing in dmd
@@ -341,9 +416,7 @@ void taskDMD(void *parameter)
           free(item->text2);
         }
       }
-      //Serial.println("DMD outside");
     }
-    //Serial.println("DMD close");
     
 
     /*
@@ -643,7 +716,7 @@ void taskWebServer(void *parameter)
               String scrolltext = server.arg("scrolltext");
               char * info = (char *)malloc(sizeof(char)*(scrolltext.length()+1));
               sprintf_P(info, (PGM_P)F("%s"), scrolltext.c_str());              
-              setupDMDdata(1,3,info,true,(char*)"",false,System5x7,1000,5000,1);
+              setupDMDdata(1,SCROLLINGTEXT,info,true,(char*)"",false,Arial_Black_16,1000,5000,1);
               resetDMDLoopIndex();
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
@@ -707,6 +780,7 @@ const int   daylightOffset_sec = 0;
 
 void taskClock(void * parameter)
 {
+  isClockReady = false;
   while (!isWiFiReady)
   {
     Serial.println("Task clock waiting for wifi...");
@@ -714,38 +788,34 @@ void taskClock(void * parameter)
   }
   
   // Init and get the time
-  isClockReady = false;
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   struct tm timeinfo;
   while(!getLocalTime(&timeinfo)){
-    Serial.println("Failed to obtain time");
+    Serial.println("Clock : Failed to obtain time");
     delay(2000);
   }
 
   Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-  Serial.print("Day of week: ");
-  Serial.println(&timeinfo, "%A");
-  Serial.print("Month: ");
-  Serial.println(&timeinfo, "%B");
-  Serial.print("Day of Month: ");
-  Serial.println(&timeinfo, "%d");
-  Serial.print("Year: ");
-  Serial.println(&timeinfo, "%Y");
-  Serial.print("Hour: ");
-  Serial.println(&timeinfo, "%H");
-  Serial.print("Hour (12 hour format): ");
-  Serial.println(&timeinfo, "%I");
-  Serial.print("Minute: ");
-  Serial.println(&timeinfo, "%M");
-  Serial.print("Second: ");
-  Serial.println(&timeinfo, "%S");
+  // Serial.print("Day of week: ");
+  // Serial.println(&timeinfo, "%A");
+  // Serial.print("Month: ");
+  // Serial.println(&timeinfo, "%B");
+  // Serial.print("Day of Month: ");
+  // Serial.println(&timeinfo, "%d");
+  // Serial.print("Year: ");
+  // Serial.println(&timeinfo, "%Y");
+  // Serial.print("Hour: ");
+  // Serial.println(&timeinfo, "%H");
+  // Serial.print("Hour (12 hour format): ");
+  // Serial.println(&timeinfo, "%I");
+  // Serial.print("Minute: ");
+  // Serial.println(&timeinfo, "%M");
+  // Serial.print("Second: ");
+  // Serial.println(&timeinfo, "%S");
 
-  strftime(timeDay,3, "%d", &timeinfo);
-  strftime(timeMonth,10, "%B", &timeinfo);
-  strftime(timeYear,5, "%Y", &timeinfo);
-  day = timeinfo.tm_mday;
-  month = timeinfo.tm_mon+1;
-  year = timeinfo.tm_year+1900;
+  // strftime(timeDay,3, "%d", &timeinfo);
+  // strftime(timeMonth,10, "%B", &timeinfo);
+  // strftime(timeYear,5, "%Y", &timeinfo);
 
   String type="AM";
 
@@ -785,47 +855,7 @@ void taskClock(void * parameter)
       h = 1;
     }
 
-    if (h <= 12 && h24 < 12)
-    {
-      //Serial.println("Selamat Pagi ;)");
-    }
-    if ((h == 12 || h == 1 || h == 2 || h == 3) && h24 >= 12)
-    {
-      //Serial.println("Selamat siang :)");
-    }
-    if ((h == 4 || h == 5 || h == 6 || h == 7 || h == 8) && h24 > 12)
-    {
-      //Serial.println("Selamat sore :)");
-    }
-    if (h >= 9 && h24 > 12)
-    {
-      //Serial.println("Selamat malam :)");
-    }
 
-    // state1 = touchRead(33) > 20;
-    // if (state1 == 0)
-    // {
-    //   h = h + 1;
-    //   h24 = h24 + 1;
-    //   if (h24 < 12)
-    //     type = "AM";
-    //   if (h24 == 12)
-    //     type = "PM";
-    //   if (h24 > 12)
-    //     type = "PM";
-    //   if (h24 == 24)
-    //     h24 = 0;
-    //   if (h == 13)
-    //     h = 1;
-    // }
-    // state2 = touchRead(32) > 20;
-    // if (state2 == 0)
-    // {
-    //   s = 0;
-    //   m = m + 1;
-    // }
-
-    
     // Serial.print("Time : ");
     // Serial.print(timeinfo.tm_hour);
     // Serial.print(":");
@@ -833,9 +863,46 @@ void taskClock(void * parameter)
     // Serial.print(":");
     // Serial.println(s);
     sprintf_P(str_clock_full, (PGM_P)F("%02d:%02d:%02d"), h24, m, s);
-    sprintf_P(str_clock, (PGM_P)F("%02d:%02d"), h24, m);
     isClockReady = true;
     //Serial.println(str_clock);
+  }
+}
+
+
+void taskDate(void * parameter)
+{
+
+  isDateReady = false;
+  for (;;)
+  {
+    while (!isWiFiReady)
+    {
+      Serial.println("Task date waiting for wifi...");
+      delay(5000);
+    }
+    
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    struct tm timeinfo;
+    while(!getLocalTime(&timeinfo)){
+      Serial.println("Date : Failed to obtain time");
+      delay(2000);
+    }
+
+    Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+
+    day = timeinfo.tm_mday;
+    month = timeinfo.tm_mon; //0-11 since januari
+    year = timeinfo.tm_year+1900;
+    weekday = timeinfo.tm_wday;//0-6 since sunday
+
+    String day_names[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jum'at", "Sabtu"};
+    String month_names[] = {"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"};
+
+    memset(str_date,'\0',sizeof(char)*26);
+    sprintf_P(str_date, (PGM_P)F("%s, %02d %s %02d"), day_names[weekday].c_str(), day, month_names[month].c_str(),year);
+    isDateReady = true;
+
+    delayUntilAtTime(1,0,0);
   }
 }
 
@@ -845,13 +912,13 @@ void taskClock(void * parameter)
 //=========================================================================
 void taskJadwalSholat(void * parameter){
   for(;;){
-    if(!isClockReady){
-      Serial.println("Task JWS waiting for clock...");
+    if(!isDateReady){
+      Serial.println("Task JWS waiting for date...");
       delay(3000);
       continue;
     }
     char link[100];
-    sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%s/%d/%s"), timeYear, month,timeDay);
+    sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%02d/%02d/%02d"), year, month+1, day);
     Serial.println(link);
     
     WiFiClientSecure client;
@@ -891,6 +958,13 @@ void taskJadwalSholat(void * parameter){
 
     JsonObject data_jadwal = doc["data"]["jadwal"];
 
+    // for testing only
+    // sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), "01:24");// "04:37"
+    // sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), "01:30");
+    // sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), "01:50");
+    // sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), "02:20");
+    // sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), "02:40");
+
     sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), data_jadwal["subuh"].as<const char*>());// "04:37"
     sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), data_jadwal["dzuhur"].as<const char*>());
     sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), data_jadwal["ashar"].as<const char*>());
@@ -917,8 +991,12 @@ void taskJadwalSholat(void * parameter){
 std::array<float, 4>  getArrayOfTime(char * time){
   //Serial.print("getArrayOfTime : ");
   //Serial.print(time);
+
+  char copied_time[9] = {'\0'};
+  sprintf_P(copied_time, (PGM_P)F("%s"), time);
+
   const char delimiter[2] = ":";
-  char * token = strtok(time, delimiter);
+  char * token = strtok(copied_time, delimiter);
   std::array<float, 4> as;
   int index = 0;
   while( token != NULL ) {
@@ -927,16 +1005,18 @@ std::array<float, 4>  getArrayOfTime(char * time){
       token = strtok(NULL, delimiter);
   }
   as[3] = (as[0]*3600)+(as[1]*60)+as[2];
-  Serial.print("=>");
-  Serial.print(as[0]);
-  Serial.print("-");
-  Serial.print(as[1]);
-  Serial.print("-");
-  Serial.print(as[2]);
-  Serial.print("-");
-  Serial.println(as[3]);
+  // Serial.print("=>");
+  // Serial.print(as[0]);
+  // Serial.print("-");
+  // Serial.print(as[1]);
+  // Serial.print("-");
+  // Serial.print(as[2]);
+  // Serial.print("-");
+  // Serial.println(as[3]);
   return as;
 }
+
+#define ALERT_COUNTUP_SHOLAT 5 //in minutes
 
 void taskCountDownJWS(void * parameter){
   for(;;){
@@ -955,7 +1035,7 @@ void taskCountDownJWS(void * parameter){
     
     int counter = 0;
 
-    memset(type_jws,0,sizeof(type_jws));
+    memset(type_jws,'\0',sizeof(char)*8);
 
     if((clock[3] < subuh[3] && clock[3] >= 0) || (clock[3] >= isya[3] && clock[3] <=86400)){
       sprintf_P(type_jws, (PGM_P)F("subuh"));
@@ -973,11 +1053,6 @@ void taskCountDownJWS(void * parameter){
       sprintf_P(type_jws, (PGM_P)F("isya"));
       counter = isya[3] - clock[3];
     }
-    
-    Serial.print("Counter Countdown for ");
-    Serial.print(type_jws);
-    Serial.print(" : ");
-    Serial.println(counter);
 
     int leftSeconds = counter;
     int hours = leftSeconds/3600;
@@ -991,6 +1066,17 @@ void taskCountDownJWS(void * parameter){
       leftSeconds = leftSeconds % 60;
     }
     seconds = leftSeconds;
+
+    Serial.print("Counter Countdown for ");
+    Serial.print(type_jws);
+    Serial.print(" : ");
+    Serial.print(counter);
+    Serial.print(" ==> ");
+    Serial.print(hours);
+    Serial.print(" - ");
+    Serial.print(minutes);
+    Serial.print(" - ");
+    Serial.println(seconds);
 
     while(counter >= 0){
       if(seconds==-1){
@@ -1014,9 +1100,10 @@ void taskCountDownJWS(void * parameter){
     }
 
     //show alert
-    char count_down_alert[30] = {0};
-    sprintf_P(count_down_alert, (PGM_P)F("Waktunya sholat %s"), type_jws);
-    setupDMDdata(1,4,count_down_alert,"",System5x7,1000,5*60*1000/*5 menit*/,1);
+    char count_alert_alert[30] = {0};
+    sprintf_P(count_alert_alert, (PGM_P)F("Sudah masuk waktu sholat %s"), type_jws);
+    setupDMDdata(1,COUNTUP,count_alert_alert,"",System5x7,1000,ALERT_COUNTUP_SHOLAT*60*1000/*5 menit*/,1);
+    resetDMDLoopIndex();
     delay(5000);
   }
 }
@@ -1072,11 +1159,11 @@ void setup()
   ssid = preferences.getString("ssid","");
   password = preferences.getString("password","");
 
-  // while(!SPIFFS.begin(true)){
-  //   Serial.println("An Error has occurred while mounting SPIFFS");
-  //   return;
-  // }
-  // isSPIFFSReady = true;
+  while(!SPIFFS.begin(true)){
+    Serial.println("An Error has occurred while mounting SPIFFS");
+    return;
+  }
+  isSPIFFSReady = true;
 
   // xTaskCreatePinnedToCore(
   //     taskButtonTouch,  // Function that should be called
@@ -1117,6 +1204,16 @@ void setup()
         NULL,           // Parameter to pass
         1,              // Task priority
         &taskClockHandle, // Task handle
+        0);
+
+    delay(5000);
+    xTaskCreatePinnedToCore(
+        taskDate,  // Function that should be called
+        "Date",   // Name of the task (for debugging)
+        5000,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        1,              // Task priority
+        &taskDateHandle, // Task handle
         0);
 
     delay(5000);
