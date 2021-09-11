@@ -786,7 +786,7 @@ void taskWebServer(void *parameter)
               String scrolltext = server.arg("scrolltext");
               char * info = (char *)malloc(sizeof(char)*(scrolltext.length()+1));
               sprintf_P(info, (PGM_P)F("%s"), scrolltext.c_str());              
-              setupDMDdata(1,DMD_TYPE_SCROLL,info,true,(char*)"",false,Arial_Black_16,1000,5000,1,-1, millis());
+              setupDMDdata(1,DMD_TYPE_SCROLL,info,true,(char*)"",false,Arial_Black_16,1000,5000,1,0.0);
               resetDMDLoopIndex();
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
@@ -1022,9 +1022,9 @@ void taskDate(void * parameter)
     isDateReady = true;
 
     if(weekday == 0){
-      setupDMDdata(15,DMD_TYPE_STATIC_SCROLL,"Info PUASA", false, "Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false, System5x7,1000,5000,-1,-1, "09:00:00");
+      setupDMDdata(15,DMD_TYPE_STATIC_SCROLL,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0.0, "09:00:00");
     } else if(weekday == 3){
-      setupDMDdata(15,DMD_TYPE_STATIC_SCROLL,"Info PUASA", false, "Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false, System5x7,1000,5000,-1,-1, "09:00:00");
+      setupDMDdata(15,DMD_TYPE_STATIC_SCROLL,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0.0, "09:00:00");
     }
 
     delayUntilAtTime(1,0,0);
