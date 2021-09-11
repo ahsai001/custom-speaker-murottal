@@ -217,7 +217,7 @@ void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_fre
 }
 void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, const char * exact_time /*09:10:23*/){
   std::array<unsigned long, 4> timeInfo = getArrayOfTime(exact_time);
-  setupDMDdata(index,type,text1,need_free_text1,text2,need_free_text2,font,delay_inMS,duration_inMS,max_count,life_time_inMS,millis()+timeInfo[3]);
+  setupDMDdata(index,type,text1,need_free_text1,text2,need_free_text2,font,delay_inMS,duration_inMS,max_count,life_time_inMS,millis()+msDistanceFromNowToTime(timeInfo[0],timeInfo[1], timeInfo[2]));
 }
 
 void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS){
