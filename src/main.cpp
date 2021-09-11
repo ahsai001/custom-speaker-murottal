@@ -68,6 +68,8 @@ const uint8_t built_in_led = 2;
 const uint8_t relay = 26;
 
 char data_jadwal_subuh[9];
+char data_jadwal_syuruk[9];
+char data_jadwal_dhuha[9];
 char data_jadwal_dzuhur[9];
 char data_jadwal_ashar[9];
 char data_jadwal_maghrib[9];
@@ -83,26 +85,28 @@ static char count_down_jws[9] = "--:--:--"; //04:30:00
 //22.30 - 01.45 : -21 jam + 15 menit + 24 jam
 //22.30 - 01.15 : -21 jam + -15 menit + 24 jam
 
-uint32_t sDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
-    int64_t deltaInSecond = ((hours-h24)*3600) + ((minutes-m)*60) + seconds-s;
+unsigned long sDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
+    signed long deltaInSecond = ((hours-h24)*3600) + ((minutes-m)*60) + seconds-s;
     if(deltaInSecond <= 0){
       deltaInSecond += 24*3600;
     }
-    return (uint32_t)deltaInSecond;
+    return (unsigned long)deltaInSecond;
 }
 
-uint32_t sDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
-    int64_t deltaInSecond = ((thours-fhours)*3600) + ((tminutes-fminutes)*60) + (tseconds-fseconds);
+unsigned long msDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
+  return sDistanceFromNowToTime(hours, minutes, seconds) * 1000;
+}
+
+unsigned long sDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
+    signed long deltaInSecond = ((thours-fhours)*3600) + ((tminutes-fminutes)*60) + (tseconds-fseconds);
     if(deltaInSecond <= 0){
       deltaInSecond += 24*3600;
     }
-    return (uint32_t)deltaInSecond;
+    return (unsigned long)deltaInSecond;
 }
 
 void delayUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
-    uint32_t delta = sDistanceFromNowToTime(hours,minutes, seconds)*1000;
-    //Serial.println(delta);
-    delay(delta);
+    delay(msDistanceFromNowToTime(hours, minutes, seconds));
 }
 
 void eraseNVS(){
@@ -120,11 +124,11 @@ void eraseNVS(){
 #define DMD_DATA_SIZE 20
 
 enum DMDType {
-  DATETIME, JWS, SCROLLINGTEXT, COUNTDOWN, COUNTUP
+  DMD_TYPE_STATIC_SCROLL, DMD_TYPE_STATIC_STATIC, DMD_TYPE_SCROLL, DMD_TYPE_COUNTDOWN_SCROLL, DMD_TYPE_COUNTUP_SCROLL
 };
 
 struct DMD_Data{
-  int type = 0; //1:jam, 2:jws, 3:scrollingtext, 4:countdown, 5:countup
+  int type = -1; //1:datetime, 2:jws, 3:scrollingtext, 4:countdown, 5:countup
   char * text1;
   bool need_free_text1 = false;
   char * text2;
@@ -132,8 +136,10 @@ struct DMD_Data{
   const uint8_t *font;
   unsigned long delay = 0; //delay refresh dalam setiap kemunculan
   unsigned long duration = 0; //durasi setiap kemunculan
-  int max_count = 1; //jumlah kemunculan
-  int count = 0; 
+  int max_count = 1; //jumlah kemunculan, -1 for unlimited
+  int count = 0; //by code
+  unsigned long life_time = -1; // in ms
+  unsigned long start_time = -1; //by code
 };
 bool need_reset_dmd_loop_index = false;
 int dmd_loop_index = 0; //we can change this runtime
@@ -168,7 +174,7 @@ void resetDMDLoopIndex(){ //use this function to make show important message rig
   need_reset_dmd_loop_index = true;
 }
 
-void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
+void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count, unsigned life_time){
   dmd_data_list[index].type = type;
   dmd_data_list[index].text1 = (char*)text1;
   dmd_data_list[index].need_free_text1 = need_free_text1;
@@ -178,6 +184,8 @@ void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_fre
   dmd_data_list[index].delay = delay;
   dmd_data_list[index].duration = duration;
   dmd_data_list[index].max_count = max_count;
+  dmd_data_list[index].life_time = life_time;
+  dmd_data_list[index].start_time = millis();
 }
 
 void setupDMDdata(uint8_t index, DMDType type, const char * text1, const char * text2, const uint8_t * font, unsigned long delay, unsigned long duration, int max_count){
@@ -188,6 +196,7 @@ void setupDMDdata(uint8_t index, DMDType type, const char * text1, const char * 
   dmd_data_list[index].delay = delay;
   dmd_data_list[index].duration = duration;
   dmd_data_list[index].max_count = max_count;
+  dmd_data_list[index].start_time = millis();
 }
 
 void setupDMD()
@@ -208,12 +217,12 @@ void setupDMD()
   dmd.clearScreen(true);
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
-  setupDMDdata(5,DATETIME,str_clock_full, str_date_full, System5x7,1000,15000,-1);
-  setupDMDdata(6,SCROLLINGTEXT,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
-  setupDMDdata(7,JWS,count_down_jws, type_jws,System5x7,1000,10000,-1);
-  setupDMDdata(8,SCROLLINGTEXT,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
-  setupDMDdata(9,JWS,count_down_jws, type_jws,System5x7,1000,10000,-1);
-  setupDMDdata(10,SCROLLINGTEXT,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(5,DMD_TYPE_STATIC_SCROLL,str_clock_full, str_date_full, System5x7,1000,15000,-1);
+  setupDMDdata(6,DMD_TYPE_SCROLL,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(7,DMD_TYPE_STATIC_STATIC,count_down_jws, type_jws,System5x7,1000,10000,-1);
+  setupDMDdata(8,DMD_TYPE_SCROLL,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(9,DMD_TYPE_STATIC_STATIC,count_down_jws, type_jws,System5x7,1000,10000,-1);
+  setupDMDdata(10,DMD_TYPE_SCROLL,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
 
   Serial.println("DMD is coming");
 }
@@ -269,7 +278,7 @@ void taskDMD(void *parameter)
 
         switch (item->type)
         {
-          case DATETIME: //jam, hari, tanggal, bulan, tahun
+          case DMD_TYPE_STATIC_SCROLL:
             {
               int counter = item->duration/1000;
               unsigned long start = millis();
@@ -296,14 +305,14 @@ void taskDMD(void *parameter)
               }
             }
             break;
-          case JWS: //jws
-            drawTextCenter(item->font, item->text1, 1); //count down in task "count down jws"
+          case DMD_TYPE_STATIC_STATIC:
+            drawTextCenter(item->font, item->text1, 1);
             drawTextCenter(item->font, item->text2, 9); 
             break;
-          case SCROLLINGTEXT: //scrolling text
+          case DMD_TYPE_SCROLL: //single scrolling text
             marqueeText(item->font, item->text1, 1);
             break;
-          case COUNTDOWN: //count down timer
+          case DMD_TYPE_COUNTDOWN_SCROLL: //count down timer
             {
               int counter = item->duration/1000;
               int leftSeconds = counter;
@@ -358,7 +367,7 @@ void taskDMD(void *parameter)
               }
             }
             break;
-          case COUNTUP: //count up timer
+          case DMD_TYPE_COUNTUP_SCROLL: //count up timer
             {
               int counter = item->duration/1000;
               int hours = 0;
@@ -409,13 +418,24 @@ void taskDMD(void *parameter)
         }
         delay(item->delay);
       }
+
+      //Logic to destroy DMDData
+      bool deleteData = false;
       if(item->max_count > 0 && item->count >= item->max_count){
+        deleteData = true;
+      }
+
+      if(item->life_time > 0 && millis()-item->start_time > item->life_time){
+        deleteData = true;
+      }
+
+      if(deleteData){
         //reset struct to stop drawing in dmd
         item->count = 0;
         item->max_count = 1;
         item->delay = 0;
         item->duration = 0;
-        item->type = 0;
+        item->type = -1;
         if(item->need_free_text1){
           free(item->text1);
         }
@@ -423,6 +443,7 @@ void taskDMD(void *parameter)
           free(item->text2);
         }
       }
+
     }
     
 
@@ -723,7 +744,7 @@ void taskWebServer(void *parameter)
               String scrolltext = server.arg("scrolltext");
               char * info = (char *)malloc(sizeof(char)*(scrolltext.length()+1));
               sprintf_P(info, (PGM_P)F("%s"), scrolltext.c_str());              
-              setupDMDdata(1,SCROLLINGTEXT,info,true,(char*)"",false,Arial_Black_16,1000,5000,1);
+              setupDMDdata(1,DMD_TYPE_SCROLL,info,true,(char*)"",false,Arial_Black_16,1000,5000,1,-1);
               resetDMDLoopIndex();
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
@@ -875,10 +896,11 @@ void taskClock(void * parameter)
   }
 }
 
-
+//===========================================================================
+//==================================   Task Date & Hijri Date  ==============
+//===========================================================================
 void taskDate(void * parameter)
 {
-
   isDateReady = false;
   for (;;)
   {
@@ -903,8 +925,7 @@ void taskDate(void * parameter)
     weekday = timeinfo.tm_wday;//0-6 since sunday
 
     //get hijri date
-    //https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=2021&the_m=5&the_d=13&the_conv=ctoh&lg=1
-    char link[136];
+    char link[140] = {'\0'};
     sprintf_P(link, (PGM_P)F("https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=%04d&the_m=%02d&the_d=%02d&the_conv=ctoh&lg=1"), year, month+1, day);
     Serial.println(link);
 
@@ -914,15 +935,15 @@ void taskDate(void * parameter)
 
     // Your Domain name with URL path or IP address with path
     http.begin(client, link);
-    
-    // Send HTTP POST request
+
+    // Send HTTP GET request
     int httpResponseCode = http.GET();
-    
+
     if (httpResponseCode>0) {
-      Serial.print("HTTP Response code: ");
+      Serial.print("Date HTTP Response code: ");
       Serial.println(httpResponseCode);
     } else {
-      Serial.print("Error code: ");
+      Serial.print("Date Error code: ");
       Serial.println(httpResponseCode);
     }
 
@@ -935,15 +956,15 @@ void taskDate(void * parameter)
     DeserializationError error = deserializeJson(doc, jsonData);
 
     if (error) {
-      Serial.print(F("deserializeJson() failed: "));
+      Serial.print(F("Date deserializeJson() failed: "));
       Serial.println(error.f_str());
       delay(20000);
       isDateReady = false;
       continue;
     }
 
-    const char * data_date = doc["tanggal_hijriyah"];
-    sprintf_P(str_hijri_date, (PGM_P)F("%s"), data_date);
+    const char * hijri_date = doc["tanggal_hijriyah"];
+    sprintf_P(str_hijri_date, (PGM_P)F("%s"), hijri_date);
     hijri_day = doc["hijri_tanggal"];
     hijri_month = doc["hijri_bulan"];
     hijri_year = doc["hijri_tahun"];
@@ -973,7 +994,7 @@ void taskJadwalSholat(void * parameter){
       delay(3000);
       continue;
     }
-    char link[100];
+    char link[100] = {'\0'};
     sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%02d/%02d/%02d"), year, month+1, day);
     Serial.println(link);
     
@@ -984,15 +1005,15 @@ void taskJadwalSholat(void * parameter){
     // Your Domain name with URL path or IP address with path
     http.begin(client, link);
     
-    // Send HTTP POST request
+    // Send HTTP GET request
     int httpResponseCode = http.GET();
     
     if (httpResponseCode>0) {
-      Serial.print("HTTP Response code: ");
+      Serial.print("JWS HTTP Response code: ");
       Serial.println(httpResponseCode);
     }
     else {
-      Serial.print("Error code: ");
+      Serial.print("JWS Error code: ");
       Serial.println(httpResponseCode);
     }
 
@@ -1005,7 +1026,7 @@ void taskJadwalSholat(void * parameter){
     DeserializationError error = deserializeJson(doc, jsonData);
 
     if (error) {
-      Serial.print(F("deserializeJson() failed: "));
+      Serial.print(F("JWS deserializeJson() failed: "));
       Serial.println(error.f_str());
       delay(20000);
       isJWSReady = false;
@@ -1015,13 +1036,17 @@ void taskJadwalSholat(void * parameter){
     JsonObject data_jadwal = doc["data"]["jadwal"];
 
     // for testing only
-    // sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), "01:24");// "04:37"
-    // sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), "01:30");
-    // sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), "01:50");
-    // sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), "02:20");
-    // sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), "02:40");
+    // sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), "02:37");// "04:37"
+    // sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), "02:42");
+    // sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), "03:30");
+    // sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), "04:30");
+    // sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), "05:50");
+    // sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), "06:39");
+    // sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), "07:58");
 
     sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), data_jadwal["subuh"].as<const char*>());// "04:37"
+    sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), data_jadwal["terbit"].as<const char*>());// "04:37"
+    sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), data_jadwal["dhuha"].as<const char*>());// "04:37"
     sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), data_jadwal["dzuhur"].as<const char*>());
     sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), data_jadwal["ashar"].as<const char*>());
     sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), data_jadwal["maghrib"].as<const char*>());
@@ -1029,6 +1054,10 @@ void taskJadwalSholat(void * parameter){
     
     Serial.print("Subuh : ");
     Serial.println(data_jadwal_subuh);
+    Serial.print("Syuruk : ");
+    Serial.println(data_jadwal_syuruk);
+    Serial.print("Dhuha : ");
+    Serial.println(data_jadwal_dhuha);
     Serial.print("Dzuhur : ");
     Serial.println(data_jadwal_dzuhur);
     Serial.print("Ashar : ");
@@ -1044,7 +1073,7 @@ void taskJadwalSholat(void * parameter){
   }
 }
 
-std::array<float, 4>  getArrayOfTime(char * time){
+std::array<unsigned long, 4>  getArrayOfTime(char * time){
   //Serial.print("getArrayOfTime : ");
   //Serial.print(time);
 
@@ -1053,7 +1082,7 @@ std::array<float, 4>  getArrayOfTime(char * time){
 
   const char delimiter[2] = ":";
   char * token = strtok(copied_time, delimiter);
-  std::array<float, 4> as;
+  std::array<unsigned long, 4> as;
   int index = 0;
   while( token != NULL ) {
       as[index] = atoi(token);
@@ -1072,7 +1101,8 @@ std::array<float, 4>  getArrayOfTime(char * time){
   return as;
 }
 
-#define ALERT_COUNTUP_SHOLAT 5 //in minutes
+#define ALERT_COUNTUP_SHOLAT 5*60*1000/*5 menit*/
+#define ALERT_COUNTDOWN_DZIKIR 5*60*1000/*5 menit*/
 
 void taskCountDownJWS(void * parameter){
   for(;;){
@@ -1082,12 +1112,14 @@ void taskCountDownJWS(void * parameter){
       delay(3000);
       continue;
     }
-    std::array<float,4> clock = getArrayOfTime(str_clock_full);
-    std::array<float,4> subuh = getArrayOfTime(data_jadwal_subuh);
-    std::array<float,4> dzuhur = getArrayOfTime(data_jadwal_dzuhur);
-    std::array<float,4> ashar = getArrayOfTime(data_jadwal_ashar);
-    std::array<float,4> maghrib = getArrayOfTime(data_jadwal_maghrib);
-    std::array<float,4> isya = getArrayOfTime(data_jadwal_isya);
+    std::array<unsigned long,4> clock = getArrayOfTime(str_clock_full);
+    std::array<unsigned long,4> subuh = getArrayOfTime(data_jadwal_subuh);
+    std::array<unsigned long,4> syuruk = getArrayOfTime(data_jadwal_syuruk);
+    std::array<unsigned long,4> dhuha = getArrayOfTime(data_jadwal_dhuha);
+    std::array<unsigned long,4> dzuhur = getArrayOfTime(data_jadwal_dzuhur);
+    std::array<unsigned long,4> ashar = getArrayOfTime(data_jadwal_ashar);
+    std::array<unsigned long,4> maghrib = getArrayOfTime(data_jadwal_maghrib);
+    std::array<unsigned long,4> isya = getArrayOfTime(data_jadwal_isya);
     
     int counter = 0;
 
@@ -1096,6 +1128,20 @@ void taskCountDownJWS(void * parameter){
     if((clock[3] < subuh[3] && clock[3] >= 0) || (clock[3] >= isya[3] && clock[3] <=86400)){
       sprintf_P(type_jws, (PGM_P)F("subuh"));
       counter = sDistanceFromTimeToTime(clock[0],clock[1],clock[2],subuh[0],subuh[1],subuh[2]);
+    } else if(clock[3] < syuruk[3]){
+      sprintf_P(type_jws, (PGM_P)F("syuruk"));
+      counter = syuruk[3] - clock[3];
+
+      //it's time to dzikir in the morning
+      setupDMDdata(2,DMD_TYPE_STATIC_SCROLL,count_down_jws,false,"Dzikir Pagi",false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
+      resetDMDLoopIndex();
+    } else if(clock[3] < dhuha[3]){
+      sprintf_P(type_jws, (PGM_P)F("dhuha"));
+      counter = dhuha[3] - clock[3];
+
+      //it's time to sholat dhuha
+      setupDMDdata(3,DMD_TYPE_STATIC_SCROLL,str_clock_full,false,"Waktu Sholat Dhuha",false,System5x7,1000,10000,-1,(dzuhur[3]-dhuha[3]-(15*60))*1000);
+      resetDMDLoopIndex();
     } else if(clock[3] < dzuhur[3]){
       sprintf_P(type_jws, (PGM_P)F("dzuhur"));
       counter = dzuhur[3] - clock[3];
@@ -1105,9 +1151,20 @@ void taskCountDownJWS(void * parameter){
     } else if(clock[3] < maghrib[3]){
       sprintf_P(type_jws, (PGM_P)F("maghrib"));
       counter = maghrib[3] - clock[3];
+
+      //it's time to dzikir in the afternoon
+      setupDMDdata(2,DMD_TYPE_STATIC_SCROLL,count_down_jws,false,"Dzikir Petang",false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
+      resetDMDLoopIndex();
     } else if(clock[3] < isya[3]){
       sprintf_P(type_jws, (PGM_P)F("isya"));
       counter = isya[3] - clock[3];
+
+
+      //it's time to update hijri date
+      sprintf_P(str_hijri_date, (PGM_P)F("%d%s"), hijri_day+1,(hijri_day >= 10 ? str_hijri_date+2 : str_hijri_date+1));     
+      Serial.print("New Hijri Date :");
+      Serial.println(str_hijri_date);
+      sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
     }
 
     int leftSeconds = counter;
@@ -1156,9 +1213,9 @@ void taskCountDownJWS(void * parameter){
     }
 
     //show alert
-    char count_alert_alert[30] = {0};
-    sprintf_P(count_alert_alert, (PGM_P)F("Sudah masuk waktu sholat %s"), type_jws);
-    setupDMDdata(1,COUNTUP,count_alert_alert,"",System5x7,1000,ALERT_COUNTUP_SHOLAT*60*1000/*5 menit*/,1);
+    char count_sholat_alert[30] = {0};
+    sprintf_P(count_sholat_alert, (PGM_P)F("Sudah masuk waktu sholat %s"), type_jws);
+    setupDMDdata(1,DMD_TYPE_COUNTUP_SCROLL,count_sholat_alert,"",System5x7,1000,ALERT_COUNTUP_SHOLAT,1);
     resetDMDLoopIndex();
     delay(5000);
   }
@@ -1266,7 +1323,7 @@ void setup()
     xTaskCreatePinnedToCore(
         taskDate,  // Function that should be called
         "Date",   // Name of the task (for debugging)
-        5000,           // Stack size (bytes)
+        7000,           // Stack size (bytes)
         NULL,           // Parameter to pass
         1,              // Task priority
         &taskDateHandle, // Task handle
