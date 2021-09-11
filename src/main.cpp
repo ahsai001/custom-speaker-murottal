@@ -42,6 +42,8 @@ int m = 0; //minutes
 int s = 0; //seconds
 static char str_clock_full[9] = "--:--:--"; //used by dmd task
 static char str_date[26] = "Minggu, 10 September 2021"; //used by dmd task
+static char str_hijri_date[30] = "10 jumadil akhir 1443";
+static char str_date_full[55] = "";
 // char timeDay[3];
 // char timeMonth[10];
 // char timeYear[5];
@@ -49,6 +51,11 @@ int day;
 int month;
 int year;
 int weekday;
+int hijri_day;
+int hijri_month;
+int hijri_year;
+
+
 bool isWiFiReady = false;
 bool isClockReady = false;
 bool isDateReady = false;
@@ -201,7 +208,7 @@ void setupDMD()
   dmd.clearScreen(true);
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
-  setupDMDdata(5,DATETIME,str_clock_full, str_date,System5x7,1000,15000,-1);
+  setupDMDdata(5,DATETIME,str_clock_full, str_date_full, System5x7,1000,15000,-1);
   setupDMDdata(6,SCROLLINGTEXT,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
   setupDMDdata(7,JWS,count_down_jws, type_jws,System5x7,1000,10000,-1);
   setupDMDdata(8,SCROLLINGTEXT,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
@@ -625,7 +632,7 @@ const char index_html_ap[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-const char index_html[] PROGMEM = R"rawliteral(
+const char index_html_setting[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
   <title>Custom Speaker Murottal Setting</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -672,7 +679,7 @@ WebServer server(80);
 void handleWebRoot()
 {
   digitalWrite(built_in_led, 0);
-  server.send(200, "text/plain", "hello world");
+  server.send(200, "text/plain", "Selamat datang sahabat pengguna Speaker Murottal by AhsaiLabs");
   digitalWrite(built_in_led, 1);
 }
 
@@ -709,7 +716,7 @@ void taskWebServer(void *parameter)
             { server.send(200, "text/plain", "this works as well"); });
 
   server.on("/setting", []()
-            { server.send(200, "text/html", index_html); });
+            { server.send(200, "text/html", index_html_setting); });
 
   server.on("/get-setting", []()
             {
@@ -731,8 +738,8 @@ void taskWebServer(void *parameter)
 
   server.on("/restart", []()
             {
-              ESP.restart();
               server.send(200, "text/plain", "restart ESP");
+              ESP.restart();
             });
 
   server.on("/setwifi",[](){
@@ -895,11 +902,60 @@ void taskDate(void * parameter)
     year = timeinfo.tm_year+1900;
     weekday = timeinfo.tm_wday;//0-6 since sunday
 
+    //get hijri date
+    //https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=2021&the_m=5&the_d=13&the_conv=ctoh&lg=1
+    char link[136];
+    sprintf_P(link, (PGM_P)F("https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=%04d&the_m=%02d&the_d=%02d&the_conv=ctoh&lg=1"), year, month+1, day);
+    Serial.println(link);
+
+    WiFiClientSecure client;
+    HTTPClient http;
+    client.setInsecure();
+
+    // Your Domain name with URL path or IP address with path
+    http.begin(client, link);
+    
+    // Send HTTP POST request
+    int httpResponseCode = http.GET();
+    
+    if (httpResponseCode>0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+    } else {
+      Serial.print("Error code: ");
+      Serial.println(httpResponseCode);
+    }
+
+    String jsonData = http.getString();
+
+    // Free resources
+    http.end();
+
+    DynamicJsonDocument doc(512);
+    DeserializationError error = deserializeJson(doc, jsonData);
+
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      delay(20000);
+      isDateReady = false;
+      continue;
+    }
+
+    const char * data_date = doc["tanggal_hijriyah"];
+    sprintf_P(str_hijri_date, (PGM_P)F("%s"), data_date);
+    hijri_day = doc["hijri_tanggal"];
+    hijri_month = doc["hijri_bulan"];
+    hijri_year = doc["hijri_tahun"];
+
+
     String day_names[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jum'at", "Sabtu"};
     String month_names[] = {"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"};
 
     memset(str_date,'\0',sizeof(char)*26);
     sprintf_P(str_date, (PGM_P)F("%s, %02d %s %02d"), day_names[weekday].c_str(), day, month_names[month].c_str(),year);
+    
+    sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
     isDateReady = true;
 
     delayUntilAtTime(1,0,0);
@@ -951,7 +1007,7 @@ void taskJadwalSholat(void * parameter){
     if (error) {
       Serial.print(F("deserializeJson() failed: "));
       Serial.println(error.f_str());
-      delay(4000);
+      delay(20000);
       isJWSReady = false;
       continue;
     }
