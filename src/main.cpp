@@ -322,9 +322,6 @@ void taskDMD(void *parameter)
               dmd.selectFont(item->font);
               int width = stringWidth(item->font,item->text1);
               int posx = (32*DISPLAYS_ACROSS) - 1;
-
-              Serial.print("hello here 1 : ");
-              Serial.println(item->text1);
         
               while(counter >= 0){
                   if(need_reset_dmd_loop_index){
