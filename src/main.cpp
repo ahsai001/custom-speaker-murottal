@@ -1152,14 +1152,14 @@ void taskCountDownJWS(void * parameter){
       counter = syuruk[3] - clock[3];
 
       //it's time to dzikir in the morning
-      setupDMDdata(2,DMD_TYPE_STATIC_SCROLL,count_down_jws,false,"Dzikir Pagi",false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
+      setupDMDdata(2,DMD_TYPE_STATIC_SCROLL,"Dzikir Pagi",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
       resetDMDLoopIndex();
     } else if(clock[3] < dhuha[3]){
       sprintf_P(type_jws, (PGM_P)F("dhuha"));
       counter = dhuha[3] - clock[3];
 
       //it's time to sholat dhuha
-      setupDMDdata(3,DMD_TYPE_STATIC_SCROLL,str_clock_full,false,"Waktu Sholat Dhuha",false,System5x7,1000,10000,-1,(dzuhur[3]-dhuha[3]-(15*60))*1000);
+      setupDMDdata(3,DMD_TYPE_STATIC_SCROLL,"Waktu Sholat Dhuha",false,str_clock_full,false,System5x7,1000,10000,-1,(dzuhur[3]-dhuha[3]-(15*60))*1000);
       resetDMDLoopIndex();
     } else if(clock[3] < dzuhur[3]){
       sprintf_P(type_jws, (PGM_P)F("dzuhur"));
@@ -1172,7 +1172,7 @@ void taskCountDownJWS(void * parameter){
       counter = maghrib[3] - clock[3];
 
       //it's time to dzikir in the afternoon
-      setupDMDdata(2,DMD_TYPE_STATIC_SCROLL,count_down_jws,false,"Dzikir Petang",false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
+      setupDMDdata(2,DMD_TYPE_STATIC_SCROLL,"Dzikir Petang",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
       resetDMDLoopIndex();
     } else if(clock[3] < isya[3]){
       sprintf_P(type_jws, (PGM_P)F("isya"));
