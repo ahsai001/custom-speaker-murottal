@@ -115,7 +115,7 @@ std::array<unsigned long, 2> sDistanceFromDayTimeToDayTime(int16_t fdays, uint8_
     std::array<unsigned long,2> result;
     //1, 9:00:00 ==> 5, 8:30:00
     //5, 9:00:00 ==> 5, 8:30:00
-    //2, 9:00:00 ==> 5, 10:30:00
+    //2, 9:00:00 ==> 2, 8:00:00
     //-1, 9:00:00 ==> 2, 10:00:00
     unsigned long deltaInSecond = 0;
     deltaInSecond += (tdays-fdays-1)*24*3600;
@@ -248,6 +248,14 @@ void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_fre
   dmd_data_list[index].life_time_inMS = life_time_inMS;
   dmd_data_list[index].start_time_inMS = start_time_inMS;
 }
+
+void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count,  uint8_t fdays, const char * start_time, uint8_t tdays, const char * end_time /*09:10:23*/){
+  std::array<unsigned long, 4> start_time_info = getArrayOfTime(start_time);
+  std::array<unsigned long, 4> end_time_info = getArrayOfTime(end_time);
+  std::array<unsigned long, 2> distance_info = msDistanceFromDayTimeToDayTime(fdays,start_time_info[0],start_time_info[1],start_time_info[2],tdays, end_time_info[0],end_time_info[1],end_time_info[2]);
+  setupDMDdata(index,type,text1,need_free_text1,text2,need_free_text2,font,delay_inMS,duration_inMS,max_count, distance_info[0], distance_info[1]);
+}
+
 void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, const char * exact_time /*09:10:23*/){
   std::array<unsigned long, 4> timeInfo = getArrayOfTime(exact_time);
   setupDMDdata(index,type,text1,need_free_text1,text2,need_free_text2,font,delay_inMS,duration_inMS,max_count,life_time_inMS,millis()+msDistanceFromNowToTime(timeInfo[0],timeInfo[1], timeInfo[2]));
@@ -280,6 +288,9 @@ void setupDMD()
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
   setupDMDdata(5,DMD_TYPE_SCROLL_STATIC,str_date_full,str_clock_full, System5x7,1000,15000,-1);
+  
+  setupDMDdata(15,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0.0, 0.0);
+
   //setupDMDdata(6,DMD_TYPE_SCROLL,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
   //setupDMDdata(7,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
   //setupDMDdata(8,DMD_TYPE_SCROLL,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
@@ -370,6 +381,8 @@ void taskDMD(void *parameter)
                     if(posx < (-1*width)){
                       posx = (32*DISPLAYS_ACROSS) - 1;
                       message_full_displayed = true;
+                    } else {
+                      message_full_displayed = false;
                     }
                     timer = millis();
                   }
