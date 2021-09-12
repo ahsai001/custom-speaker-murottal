@@ -1019,9 +1019,9 @@ void taskDate(void * parameter)
     isDateReady = true;
 
     if(weekday == 0){
-      setupDMDdata(15,DMD_TYPE_STATIC_SCROLL,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0.0, "09:00:00");
+      setupDMDdata(15,DMD_TYPE_STATIC_SCROLL,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,sDistanceFromTimeToTime(9,0,0,23,59,0)*1000, "09:00:00");
     } else if(weekday == 3){
-      setupDMDdata(15,DMD_TYPE_STATIC_SCROLL,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0.0, "09:00:00");
+      setupDMDdata(15,DMD_TYPE_STATIC_SCROLL,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,sDistanceFromTimeToTime(9,0,0,23,59,0)*1000, "09:00:00");
     }
 
     delayUntilAtTime(1,0,0);
