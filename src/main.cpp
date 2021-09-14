@@ -277,7 +277,7 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
   Serial.print(text1);
   Serial.print(" : ");
   Serial.print(text2);
-  Serial.print(" : ");
+  Serial.print(",index : ");
   Serial.print(index);
   Serial.print(",type : ");
   Serial.print(type);
