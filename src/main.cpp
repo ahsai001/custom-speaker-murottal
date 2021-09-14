@@ -85,56 +85,58 @@ static char count_down_jws[9] = "--:--:--"; //04:30:00
 //22.30 - 01.45 : -21 jam + 15 menit + 24 jam
 //22.30 - 01.15 : -21 jam + -15 menit + 24 jam
 
-unsigned long sDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
-    signed long deltaInSecond = ((hours-h24)*3600) + ((minutes-m)*60) + seconds-s;
+long long sDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
+    long long deltaInSecond = ((hours-h24)*3600) + ((minutes-m)*60) + seconds-s;
     if(deltaInSecond <= 0){
       deltaInSecond += 24*3600;
     }
-    return (unsigned long)deltaInSecond;
+    return deltaInSecond;
 }
 
-unsigned long msDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
+long long msDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
   return sDistanceFromNowToTime(hours, minutes, seconds) * 1000;
 }
 
-unsigned long sDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
-    signed long deltaInSecond = ((thours-fhours)*3600) + ((tminutes-fminutes)*60) + (tseconds-fseconds);
+long long sDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
+    long long deltaInSecond = ((thours-fhours)*3600) + ((tminutes-fminutes)*60) + (tseconds-fseconds);
     if(deltaInSecond <= 0){
       deltaInSecond += 24*3600;
     }
-    return (unsigned long)deltaInSecond;
+    return deltaInSecond;
 }
 
-unsigned long msDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
+long long msDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
     return sDistanceFromTimeToTime(fhours, fminutes, fseconds, thours, tminutes, tseconds)*1000;
 }
 
 
-std::array<unsigned long, 2> sDistanceFromDayTimeToDayTime(int16_t fdays, uint8_t fhours, uint8_t fminutes, uint8_t fseconds, int16_t tdays, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
+std::array<long long, 2> sDistanceFromDayTimeToDayTime(int16_t fdays, uint8_t fhours, uint8_t fminutes, uint8_t fseconds, int16_t tdays, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
     //now is day 0, fdays=1 means tomorrow, fdays=2 means the day after tomorrow
-    std::array<unsigned long,2> result;
+    std::array<long long,2> result;
     //1, 9:00:00 ==> 5, 8:30:00
     //5, 9:00:00 ==> 5, 8:30:00
     //2, 9:00:00 ==> 2, 8:00:00
-    //-1, 9:00:00 ==> 2, 10:00:00
-    unsigned long deltaInSecond = 0;
+    //-1, 9:00:00 ==> 0, 22:00:00 ==> 0, 23:00:00
+    long long deltaInSecond = 0;
     deltaInSecond += (tdays-fdays-1)*24*3600;
     deltaInSecond += sDistanceFromTimeToTime(fhours,fminutes,fseconds,24,0,0);
     deltaInSecond += sDistanceFromTimeToTime(0,0,0,thours,tminutes,tseconds);
     result[1] = deltaInSecond; //distance from 'from' to 'to'
 
     deltaInSecond = 0;
-    deltaInSecond += (fdays-0-1)*24*3600;
-    deltaInSecond += sDistanceFromTimeToTime(h24,m,s,24,0,0);
+    deltaInSecond += (fdays-0-1)*24*3600; //-48 jam + 2 jam + 9 jam = -37
+    deltaInSecond += sDistanceFromTimeToTime(h24,m,s,24,0,0); 
     deltaInSecond += sDistanceFromTimeToTime(0,0,0,fhours,fminutes,fseconds);
     result[0] = deltaInSecond; //distance from 'now' to 'from'
     return result;
 }
 
 
-std::array<unsigned long, 2> msDistanceFromDayTimeToDayTime(int16_t fdays, uint8_t fhours, uint8_t fminutes, uint8_t fseconds, int16_t tdays, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
-  std::array<unsigned long, 2> sDistance = sDistanceFromDayTimeToDayTime(fdays,fhours, fminutes, fseconds, tdays, thours,tminutes, tseconds);
-  std::array<unsigned long, 2> msDistance = {sDistance[0]*1000, sDistance[1]*1000};
+std::array<long long, 2> msDistanceFromDayTimeToDayTime(int16_t fdays, uint8_t fhours, uint8_t fminutes, uint8_t fseconds, int16_t tdays, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
+  std::array<long long, 2> sDistance = sDistanceFromDayTimeToDayTime(fdays,fhours, fminutes, fseconds, tdays, thours,tminutes, tseconds);
+  std::array<long long, 2> msDistance;
+  msDistance[0] = sDistance[0]*1000;
+  msDistance[1] = sDistance[1]*1000;
   return msDistance;
 }
 
@@ -200,7 +202,7 @@ struct DMD_Data{
   int max_count = 1; //jumlah kemunculan, -1 for unlimited
   int count = 0; //by code
   unsigned long life_time_inMS = 0; // in ms
-  unsigned long start_time_inMS = 0; //by code
+  long long start_time_inMS = 0; //by code
 };
 bool need_reset_dmd_loop_index = false;
 int dmd_loop_index = 0; //we can change this runtime
@@ -235,7 +237,7 @@ void resetDMDLoopIndex(){ //use this function to make show important message rig
   need_reset_dmd_loop_index = true;
 }
 
-void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, unsigned long start_time_inMS){
+void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, long long start_time_inMS){
   dmd_data_list[index].type = type;
   dmd_data_list[index].text1 = (char*)text1;
   dmd_data_list[index].need_free_text1 = need_free_text1;
@@ -249,11 +251,11 @@ void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_fre
   dmd_data_list[index].start_time_inMS = start_time_inMS;
 }
 
-void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count,  uint8_t fdays, const char * start_time, uint8_t tdays, const char * end_time /*09:10:23*/){
+void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count,  int16_t fdays, const char * start_time, int16_t tdays, const char * end_time /*09:10:23*/){
   std::array<unsigned long, 4> start_time_info = getArrayOfTime(start_time);
   std::array<unsigned long, 4> end_time_info = getArrayOfTime(end_time);
-  std::array<unsigned long, 2> distance_info = msDistanceFromDayTimeToDayTime(fdays,start_time_info[0],start_time_info[1],start_time_info[2],tdays, end_time_info[0],end_time_info[1],end_time_info[2]);
-  setupDMDdata(index,type,text1,need_free_text1,text2,need_free_text2,font,delay_inMS,duration_inMS,max_count, distance_info[0], distance_info[1]);
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(fdays,start_time_info[0],start_time_info[1],start_time_info[2],tdays, end_time_info[0],end_time_info[1],end_time_info[2]);
+  setupDMDdata(index,type,text1,need_free_text1,text2,need_free_text2,font,delay_inMS,duration_inMS,max_count, distance_info[1], millis()+distance_info[0]);
 }
 
 void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, const char * exact_time /*09:10:23*/){
@@ -288,14 +290,11 @@ void setupDMD()
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
   setupDMDdata(5,DMD_TYPE_SCROLL_STATIC,str_date_full,str_clock_full, System5x7,1000,15000,-1);
-  
-  setupDMDdata(15,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0.0, 0.0);
-
-  //setupDMDdata(6,DMD_TYPE_SCROLL,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
-  //setupDMDdata(7,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
-  //setupDMDdata(8,DMD_TYPE_SCROLL,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
-  //setupDMDdata(9,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
-  //setupDMDdata(10,DMD_TYPE_SCROLL,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(6,DMD_TYPE_SCROLL,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(7,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
+  setupDMDdata(8,DMD_TYPE_SCROLL,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(9,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
+  setupDMDdata(10,DMD_TYPE_SCROLL,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
 
   Serial.println("DMD is coming");
 }
@@ -347,8 +346,34 @@ void taskDMD(void *parameter)
         continue;
       }
 
+      //Logic to destroy DMDData
+      bool deleteData = false;
+      if(item->max_count > 0 && item->count >= item->max_count){
+        deleteData = true;
+      }
 
-      ++item->count;
+      if(item->life_time_inMS > 0 && (millis()-item->start_time_inMS) > item->life_time_inMS){
+        deleteData = true;
+      }
+
+      if(deleteData){
+        //reset struct to stop drawing in dmd
+        item->count = 0;
+        item->max_count = 1;
+        item->delay_inMS = 0;
+        item->duration_inMS = 0;
+        item->life_time_inMS = 0;
+        item->start_time_inMS = 0;
+        item->type = -1;
+        if(item->need_free_text1){
+          free(item->text1);
+        }
+        if(item->need_free_text2){
+          free(item->text2);
+        }
+        continue;
+      }
+
       dmd.clearScreen(true);
 
       while(start + item->duration_inMS > millis()){
@@ -501,36 +526,9 @@ void taskDMD(void *parameter)
             break;
         }
         delay(item->delay_inMS);
-      }
-
-      //Logic to destroy DMDData
-      bool deleteData = false;
-      if(item->max_count > 0 && item->count >= item->max_count){
-        deleteData = true;
-      }
-
-      if(item->life_time_inMS > 0 && (millis()-item->start_time_inMS) > item->life_time_inMS){
-        deleteData = true;
-      }
-
-      if(deleteData){
-        //reset struct to stop drawing in dmd
-        item->count = 0;
-        item->max_count = 1;
-        item->delay_inMS = 0;
-        item->duration_inMS = 0;
-        item->life_time_inMS = -1;
-        item->start_time_inMS = -1;
-        item->type = -1;
-        if(item->need_free_text1){
-          free(item->text1);
-        }
-        if(item->need_free_text2){
-          free(item->text2);
-        }
-      }
-
-    }
+      } //end while
+      item->count++;
+    } //end for
     
 
     /*
@@ -1066,9 +1064,9 @@ void taskDate(void * parameter)
     isDateReady = true;
 
     if(weekday == 0){
-      setupDMDdata(15,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,sDistanceFromTimeToTime(9,0,0,23,59,0)*1000, "09:00:00");
+      setupDMDdata(15,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
     } else if(weekday == 3){
-      setupDMDdata(15,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,sDistanceFromTimeToTime(9,0,0,23,59,0)*1000, "09:00:00");
+      setupDMDdata(15,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
     }
 
     delayMSUntilAtTime(1,0,0);
