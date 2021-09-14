@@ -479,7 +479,7 @@ void taskDMD(void *parameter)
 
       //Serial.println("go.................");
       dmd.clearScreen(true);
-
+      item->count++;
       while(start + item->duration_inMS > millis()){
         if(need_reset_dmd_loop_index){
           break;
@@ -648,7 +648,6 @@ void taskDMD(void *parameter)
         }
         delay(item->delay_inMS);
       } //end while
-      item->count++;
     } //end for
     
 
