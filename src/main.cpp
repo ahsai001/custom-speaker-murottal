@@ -194,7 +194,7 @@ enum DMDType {
 };
 
 struct DMD_Data{
-  int type = -1; //1:datetime, 2:jws, 3:scrollingtext, 4:countdown, 5:countup
+  int type = -1; //0:datetime, 1:jws, 2:scrollingtext, 3:countdown, 4:countup
   char * text1;
   uint8_t speed1 = 0;
   bool need_free_text1 = false;
@@ -256,7 +256,7 @@ uint8_t getAvailableDMDIndex(bool isImportant, uint8_t reservedIndex){
     choosenIndex = reservedIndex;
   }
   bool full = false;
-  while(dmd_data_list[choosenIndex].type > 0 && !full){
+  while(dmd_data_list[choosenIndex].type >= 0 && !full){
     choosenIndex++;
     if(choosenIndex >= DMD_DATA_SIZE){
       full = true;
@@ -273,7 +273,19 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
     Serial.println("DMD slot is full");
     return;
   }
-  
+
+  Serial.print(text1);
+  Serial.print(" : ");
+  Serial.print(text2);
+  Serial.print(" : ");
+  Serial.print(index);
+  Serial.print(",type : ");
+  Serial.print(type);
+  Serial.print(",max_count : ");
+  Serial.print(max_count);
+  Serial.print(",life_time : ");
+  Serial.println(life_time_inMS);
+
   dmd_data_list[index].type = type;
   dmd_data_list[index].text1 = (char*)text1;
   dmd_data_list[index].speed1 = speed1;
@@ -305,12 +317,12 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
 
 //show at now for some life time
 void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS){
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count,life_time_inMS,0.0);
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count,life_time_inMS,0);
 }
 
 //show at now for some iteration
 void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, const char * text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count){
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,false,text2,0,false,font,delay_inMS,duration_inMS,max_count,0.0,0.0);
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,false,text2,0,false,font,delay_inMS,duration_inMS,max_count,0,0);
 }
 
 void setupDMD()
@@ -377,13 +389,30 @@ void taskDMD(void *parameter)
     for(dmd_loop_index=0;dmd_loop_index<DMD_DATA_SIZE;dmd_loop_index++){
       if(need_reset_dmd_loop_index){
         need_reset_dmd_loop_index = false;
-        dmd_loop_index = 0;
+        dmd_loop_index = -1;
         continue;
       }
 
       DMD_Data * item = dmd_data_list+dmd_loop_index;
 
-      if(item->type <= 0){
+      // Serial.println("here 1");
+      // Serial.print("index : ");
+      // Serial.print(dmd_loop_index);
+      // Serial.print(",p : ");
+      // Serial.print(item->type);
+      // Serial.print(",text1 : ");
+      // Serial.print(item->text1);
+      // Serial.print(",text2 : ");
+      // Serial.print(item->text2);
+      // Serial.print(",start_time : ");
+      // Serial.print(item->start_time_inMS);
+      // Serial.print(",max_count : ");
+      // Serial.print(item->max_count);
+      // Serial.print(",life_time : ");
+      // Serial.println(item->life_time_inMS);
+      // Serial.println("here 2");
+
+      if(item->type < 0){
         continue;
       }
 
@@ -413,14 +442,10 @@ void taskDMD(void *parameter)
         item->start_time_inMS = 0;
         item->type = -1;
         if(item->need_free_text1){
-          Serial.println("free 1 malloc");
           free(item->text1);
-          Serial.println("free 1 malloc 2");
         }
         if(item->need_free_text2){
-          Serial.println("free 2 malloc");
           free(item->text2);
-          Serial.println("free 2 1malloc 2");
         }
         continue;
       }
