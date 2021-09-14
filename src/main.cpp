@@ -185,6 +185,9 @@ std::array<unsigned long, 4>  getArrayOfTime(const char * time){
 #define DISPLAYS_ACROSS 2
 #define DISPLAYS_DOWN 1
 #define DMD_DATA_SIZE 20
+#define DMD_DATA_IMPORTANT 0
+#define DMD_DATA_REGULER 5
+#define DMD_FREE_INDEX DMD_DATA_SIZE
 
 enum DMDType {
   DMD_TYPE_SCROLL_STATIC, DMD_TYPE_STATIC_STATIC, DMD_TYPE_SCROLL, DMD_TYPE_SCROLL_COUNTDOWN, DMD_TYPE_SCROLL_COUNTUP
@@ -193,10 +196,12 @@ enum DMDType {
 struct DMD_Data{
   int type = -1; //1:datetime, 2:jws, 3:scrollingtext, 4:countdown, 5:countup
   char * text1;
+  uint8_t speed1 = 0;
   bool need_free_text1 = false;
   char * text2;
+  uint8_t speed2 = 0;
   bool need_free_text2 = false;
-  const uint8_t *font;
+  const uint8_t * font;
   unsigned long delay_inMS = 0; //delay refresh dalam setiap kemunculan
   unsigned long duration_inMS = 0; //durasi setiap kemunculan
   int max_count = 1; //jumlah kemunculan, -1 for unlimited
@@ -204,6 +209,7 @@ struct DMD_Data{
   unsigned long life_time_inMS = 0; // in ms
   long long start_time_inMS = 0; //by code
 };
+
 bool need_reset_dmd_loop_index = false;
 int dmd_loop_index = 0; //we can change this runtime
 struct DMD_Data dmd_data_list[DMD_DATA_SIZE]; //index 0 - 5 for important message
@@ -233,15 +239,47 @@ void marqueeText(const uint8_t *font, const char * text, int top){
     }
   }
 }
+
 void resetDMDLoopIndex(){ //use this function to make show important message right now
   need_reset_dmd_loop_index = true;
 }
 
-void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, long long start_time_inMS){
+uint8_t getAvailableDMDIndex(bool isImportant, uint8_t reservedIndex){
+  uint8_t choosenIndex = 0;
+  if(reservedIndex >= DMD_DATA_SIZE){
+    if(isImportant){
+      choosenIndex = DMD_DATA_IMPORTANT;
+    } else {
+      choosenIndex = DMD_DATA_REGULER;
+    }
+  } else {
+    choosenIndex = reservedIndex;
+  }
+  bool full = false;
+  while(dmd_data_list[choosenIndex].type > 0 && !full){
+    choosenIndex++;
+    if(choosenIndex >= DMD_DATA_SIZE){
+      full = true;
+    }
+  }
+  return choosenIndex;
+}
+
+//show with custom
+void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, uint8_t speed1, bool need_free_text1, const char * text2, uint8_t speed2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, long long start_time_inMS){
+  uint8_t index = getAvailableDMDIndex(isImportant, reservedIndex);
+  
+  if(index >= DMD_DATA_SIZE){
+    Serial.println("DMD slot is full");
+    return;
+  }
+  
   dmd_data_list[index].type = type;
   dmd_data_list[index].text1 = (char*)text1;
+  dmd_data_list[index].speed1 = speed1;
   dmd_data_list[index].need_free_text1 = need_free_text1;
   dmd_data_list[index].text2 = (char*)text2;
+  dmd_data_list[index].speed2 = speed2;
   dmd_data_list[index].need_free_text2 = need_free_text2;
   dmd_data_list[index].font = font;
   dmd_data_list[index].delay_inMS = delay_inMS;
@@ -250,25 +288,29 @@ void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_fre
   dmd_data_list[index].life_time_inMS = life_time_inMS;
   dmd_data_list[index].start_time_inMS = start_time_inMS;
 }
-
-void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count,  int16_t fdays, const char * start_time, int16_t tdays, const char * end_time /*09:10:23*/){
+//show at range time
+void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count,  int16_t fdays, const char * start_time, int16_t tdays, const char * end_time /*09:10:23*/){
   std::array<unsigned long, 4> start_time_info = getArrayOfTime(start_time);
   std::array<unsigned long, 4> end_time_info = getArrayOfTime(end_time);
   std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(fdays,start_time_info[0],start_time_info[1],start_time_info[2],tdays, end_time_info[0],end_time_info[1],end_time_info[2]);
-  setupDMDdata(index,type,text1,need_free_text1,text2,need_free_text2,font,delay_inMS,duration_inMS,max_count, distance_info[1], millis()+distance_info[0]);
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count, distance_info[1], millis()+distance_info[0]);
 }
 
-void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, const char * exact_time /*09:10:23*/){
+//show at exact time
+void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, int16_t days, const char * exact_time /*09:10:23*/){
   std::array<unsigned long, 4> timeInfo = getArrayOfTime(exact_time);
-  setupDMDdata(index,type,text1,need_free_text1,text2,need_free_text2,font,delay_inMS,duration_inMS,max_count,life_time_inMS,millis()+msDistanceFromNowToTime(timeInfo[0],timeInfo[1], timeInfo[2]));
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(days,timeInfo[0],timeInfo[1],timeInfo[2],days,timeInfo[0],timeInfo[1],timeInfo[2]);
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count, life_time_inMS, millis()+distance_info[0]);
 }
 
-void setupDMDdata(uint8_t index, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS){
-  setupDMDdata(index,type,text1,need_free_text1,text2,need_free_text2,font,delay_inMS,duration_inMS,max_count,life_time_inMS,0.0);
+//show at now for some life time
+void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS){
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count,life_time_inMS,0.0);
 }
 
-void setupDMDdata(uint8_t index, DMDType type, const char * text1, const char * text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count){
-  setupDMDdata(index,type,text1,false,text2,false,font,delay_inMS,duration_inMS,max_count,0.0,0.0);
+//show at now for some iteration
+void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, const char * text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count){
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,false,text2,0,false,font,delay_inMS,duration_inMS,max_count,0.0,0.0);
 }
 
 void setupDMD()
@@ -289,12 +331,12 @@ void setupDMD()
   dmd.clearScreen(true);
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
-  setupDMDdata(5,DMD_TYPE_SCROLL_STATIC,str_date_full,str_clock_full, System5x7,1000,15000,-1);
-  setupDMDdata(6,DMD_TYPE_SCROLL,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
-  setupDMDdata(7,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
-  setupDMDdata(8,DMD_TYPE_SCROLL,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
-  setupDMDdata(9,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
-  setupDMDdata(10,DMD_TYPE_SCROLL,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(false,DMD_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,str_clock_full, System5x7,1000,15000,-1);
+  setupDMDdata(false,DMD_FREE_INDEX,DMD_TYPE_SCROLL,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(false,DMD_FREE_INDEX,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
+  setupDMDdata(false,DMD_FREE_INDEX,DMD_TYPE_SCROLL,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
+  setupDMDdata(false,DMD_FREE_INDEX,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
+  setupDMDdata(false,DMD_FREE_INDEX,DMD_TYPE_SCROLL,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
 
   Serial.println("DMD is coming");
 }
@@ -828,7 +870,7 @@ void taskWebServer(void *parameter)
               String scrolltext = server.arg("scrolltext");
               char * info = (char *)malloc(sizeof(char)*(scrolltext.length()+1));
               sprintf_P(info, (PGM_P)F("%s"), scrolltext.c_str());              
-              setupDMDdata(1,DMD_TYPE_SCROLL,info,true,(char*)"",false,Arial_Black_16,1000,5000,1,0.0);
+              setupDMDdata(false,DMD_FREE_INDEX,DMD_TYPE_SCROLL,info,true,(char*)"",false,Arial_Black_16,1000,5000,1,0.0);
               resetDMDLoopIndex();
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
@@ -1064,9 +1106,9 @@ void taskDate(void * parameter)
     isDateReady = true;
 
     if(weekday == 0){
-      setupDMDdata(15,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
+      setupDMDdata(true,DMD_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
     } else if(weekday == 3){
-      setupDMDdata(15,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
+      setupDMDdata(true,DMD_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
     }
 
     delayMSUntilAtTime(1,0,0);
@@ -1197,14 +1239,14 @@ void taskCountDownJWS(void * parameter){
       counter = syuruk[3] - clock[3];
 
       //it's time to dzikir in the morning
-      setupDMDdata(2,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
+      setupDMDdata(true,DMD_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
       resetDMDLoopIndex();
     } else if(clock[3] < dhuha[3]){
       sprintf_P(type_jws, (PGM_P)F("dhuha"));
       counter = dhuha[3] - clock[3];
 
       //it's time to sholat dhuha
-      setupDMDdata(3,DMD_TYPE_SCROLL_STATIC,"Waktu Sholat Dhuha",false,str_clock_full,false,System5x7,1000,10000,-1,(dzuhur[3]-dhuha[3]-(15*60))*1000);
+      setupDMDdata(true,DMD_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktu Sholat Dhuha",false,str_clock_full,false,System5x7,1000,10000,-1,(dzuhur[3]-dhuha[3]-(15*60))*1000);
       resetDMDLoopIndex();
     } else if(clock[3] < dzuhur[3]){
       sprintf_P(type_jws, (PGM_P)F("dzuhur"));
@@ -1217,7 +1259,7 @@ void taskCountDownJWS(void * parameter){
       counter = maghrib[3] - clock[3];
 
       //it's time to dzikir in the afternoon
-      setupDMDdata(2,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
+      setupDMDdata(true,DMD_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
       resetDMDLoopIndex();
     } else if(clock[3] < isya[3]){
       sprintf_P(type_jws, (PGM_P)F("isya"));
@@ -1279,7 +1321,7 @@ void taskCountDownJWS(void * parameter){
     //show alert
     char count_sholat_alert[30] = {0};
     sprintf_P(count_sholat_alert, (PGM_P)F("Sudah masuk waktu sholat %s"), type_jws);
-    setupDMDdata(1,DMD_TYPE_SCROLL_COUNTUP,count_sholat_alert,"",System5x7,1000,ALERT_COUNTUP_SHOLAT,1);
+    setupDMDdata(true,DMD_FREE_INDEX,DMD_TYPE_SCROLL_COUNTUP,count_sholat_alert,"",System5x7,1000,ALERT_COUNTUP_SHOLAT,1);
     resetDMDLoopIndex();
     delay(5000);
   }
