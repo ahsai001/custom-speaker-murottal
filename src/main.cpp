@@ -227,8 +227,8 @@ void IRAM_ATTR triggerScan()
 void marqueeText(const uint8_t *font, const char * text, int top){
   dmd.selectFont(font);
   dmd.drawMarquee(text, strlen(text), (32 * DISPLAYS_ACROSS) - 1, top);
-  long start = millis();
-  long timer = start;
+  unsigned long start = millis();
+  unsigned long timer = start;
   boolean ret = false;
   while (!ret)
   {
@@ -382,6 +382,11 @@ void taskDMD(void *parameter)
       }
 
       DMD_Data * item = dmd_data_list+dmd_loop_index;
+
+      if(item->type <= 0){
+        continue;
+      }
+
       unsigned long start  = millis();
 
       if(item->start_time_inMS > 0 && start < item->start_time_inMS){
@@ -401,17 +406,21 @@ void taskDMD(void *parameter)
       if(deleteData){
         //reset struct to stop drawing in dmd
         item->count = 0;
-        item->max_count = 1;
+        item->max_count = 0;
         item->delay_inMS = 0;
         item->duration_inMS = 0;
         item->life_time_inMS = 0;
         item->start_time_inMS = 0;
         item->type = -1;
         if(item->need_free_text1){
+          Serial.println("free 1 malloc");
           free(item->text1);
+          Serial.println("free 1 malloc 2");
         }
         if(item->need_free_text2){
+          Serial.println("free 2 malloc");
           free(item->text2);
+          Serial.println("free 2 1malloc 2");
         }
         continue;
       }
@@ -461,7 +470,24 @@ void taskDMD(void *parameter)
             drawTextCenter(item->font, item->text1, 9); 
             break;
           case DMD_TYPE_SCROLL: //single scrolling text
-            marqueeText(item->font, item->text1, 1);
+            //marqueeText(item->font, item->text1, 1);
+            {
+              dmd.selectFont(item->font);
+              dmd.drawMarquee(item->text1, strlen(item->text1), (32 * DISPLAYS_ACROSS) - 1, 1);
+              unsigned long start = millis();
+              unsigned long timer = start;
+              boolean ret = false;
+              while (!ret){
+                if(need_reset_dmd_loop_index){
+                  break;
+                }
+                if ((timer + 30) < millis())
+                {
+                  ret = dmd.stepMarquee(-1, 0);
+                  timer = millis();
+                }
+              }
+            }
             break;
           case DMD_TYPE_SCROLL_COUNTDOWN: //count down timer
             {
@@ -870,7 +896,7 @@ void taskWebServer(void *parameter)
               String scrolltext = server.arg("scrolltext");
               char * info = (char *)malloc(sizeof(char)*(scrolltext.length()+1));
               sprintf_P(info, (PGM_P)F("%s"), scrolltext.c_str());              
-              setupDMDdata(false,DMD_FREE_INDEX,DMD_TYPE_SCROLL,info,true,(char*)"",false,Arial_Black_16,1000,5000,1,0.0);
+              setupDMDdata(true,DMD_FREE_INDEX,DMD_TYPE_SCROLL,info,true,(char*)"",false,Arial_Black_16,1000,5000,1,0.0);
               resetDMDLoopIndex();
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
