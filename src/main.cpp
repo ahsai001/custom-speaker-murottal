@@ -303,6 +303,14 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
 }
 
 void showFlashMessage(const char * text, bool need_free_text){
+  DMD_Data * item = dmd_data_list;
+  if(item->type >= 0 && item->need_free_text1){
+    free(item->text1);
+  }
+  if(item->type >= 0 && item->need_free_text2){
+    free(item->text2);
+  }
+  item->type = -1;
   setupDMDdata(true,DMD_DATA_FLASH_INDEX,DMD_TYPE_SCROLL,text,0,need_free_text,"",0,false, Arial_Black_16,1000,4000,1,0,0);
   resetDMDLoopIndex();
 }
@@ -455,6 +463,8 @@ void taskDMD(void *parameter)
         if(item->need_free_text2){
           free(item->text2);
         }
+        item->need_free_text1 = false;
+        item->need_free_text2 = false;
         continue;
       }
 
