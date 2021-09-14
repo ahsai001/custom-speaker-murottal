@@ -241,7 +241,7 @@ void marqueeText(const uint8_t *font, const char * text, int top){
   }
 }
 
-void resetDMDLoopIndex(){ //use this function to make show important message right now
+void  resetDMDLoopIndex(){ //use this function to make show important message right now
   need_reset_dmd_loop_index = true;
 }
 
@@ -298,19 +298,37 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
   dmd_data_list[index].delay_inMS = delay_inMS;
   dmd_data_list[index].duration_inMS = duration_inMS;
   dmd_data_list[index].max_count = max_count;
+  dmd_data_list[index].count = 0;
   dmd_data_list[index].life_time_inMS = life_time_inMS;
   dmd_data_list[index].start_time_inMS = start_time_inMS;
 }
 
-void showFlashMessage(const char * text, bool need_free_text){
-  DMD_Data * item = dmd_data_list;
+void resetDMDData(uint8_t index){
+  DMD_Data * item = dmd_data_list+index;
   if(item->type >= 0 && item->need_free_text1){
     free(item->text1);
+    item->text1 = NULL;
   }
   if(item->type >= 0 && item->need_free_text2){
     free(item->text2);
+    item->text2 = NULL;
   }
   item->type = -1;
+  item->speed1 = 0;
+  item->need_free_text1 = false;
+  item->speed2 = 0;
+  item->need_free_text2 = false;
+  item->font = 0;
+  item->delay_inMS = 0;
+  item->duration_inMS = 0;
+  item->max_count = 0;
+  item->count = 0;
+  item->life_time_inMS = 0;
+  item->start_time_inMS = 0;
+}
+
+void showFlashMessage(const char * text, bool need_free_text){
+  resetDMDData(DMD_DATA_FLASH_INDEX);
   setupDMDdata(true,DMD_DATA_FLASH_INDEX,DMD_TYPE_SCROLL,text,0,need_free_text,"",0,false, Arial_Black_16,1000,4000,1,0,0);
   resetDMDLoopIndex();
 }
@@ -414,7 +432,7 @@ void taskDMD(void *parameter)
       // Serial.println("here 1");
       // Serial.print("index : ");
       // Serial.print(dmd_loop_index);
-      // Serial.print(",p : ");
+      // Serial.print(",type : ");
       // Serial.print(item->type);
       // Serial.print(",text1 : ");
       // Serial.print(item->text1);
@@ -429,45 +447,37 @@ void taskDMD(void *parameter)
       // Serial.println("here 2");
 
       if(item->type < 0){
+        //Serial.println("no type");
         continue;
       }
 
       unsigned long start  = millis();
 
       if(item->start_time_inMS > 0 && start < item->start_time_inMS){
+        //Serial.println("dont go now");
         continue;
       }
 
       //Logic to destroy DMDData
       bool deleteData = false;
       if(item->max_count > 0 && item->count >= item->max_count){
+        //Serial.println("max_count > 0");
         deleteData = true;
       }
 
       if(item->life_time_inMS > 0 && (millis()-item->start_time_inMS) > item->life_time_inMS){
+        //Serial.println("life_time_inMS > 0");
         deleteData = true;
       }
 
       if(deleteData){
         //reset struct to stop drawing in dmd
-        item->count = 0;
-        item->max_count = 0;
-        item->delay_inMS = 0;
-        item->duration_inMS = 0;
-        item->life_time_inMS = 0;
-        item->start_time_inMS = 0;
-        item->type = -1;
-        if(item->need_free_text1){
-          free(item->text1);
-        }
-        if(item->need_free_text2){
-          free(item->text2);
-        }
-        item->need_free_text1 = false;
-        item->need_free_text2 = false;
+        resetDMDData(DMD_DATA_FLASH_INDEX);
+        //Serial.println("delete");
         continue;
       }
 
+      //Serial.println("go.................");
       dmd.clearScreen(true);
 
       while(start + item->duration_inMS > millis()){
@@ -1307,7 +1317,7 @@ void taskCountDownJWS(void * parameter){
       counter = syuruk[3] - clock[3];
 
       //it's time to dzikir in the morning
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
+      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,str_clock_full,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
       resetDMDLoopIndex();
     } else if(clock[3] < dhuha[3]){
       sprintf_P(type_jws, (PGM_P)F("dhuha"));
@@ -1327,7 +1337,7 @@ void taskCountDownJWS(void * parameter){
       counter = maghrib[3] - clock[3];
 
       //it's time to dzikir in the afternoon
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
+      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,str_clock_full,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
       resetDMDLoopIndex();
     } else if(clock[3] < isya[3]){
       sprintf_P(type_jws, (PGM_P)F("isya"));
