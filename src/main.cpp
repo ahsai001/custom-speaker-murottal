@@ -1186,6 +1186,8 @@ void taskDate(void * parameter)
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
     } else if(weekday == 3){
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
+    } else if(weekday == 5){
+      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi",false,"Ayo Ayo", false,  System5x7,1000,5000,-1,0,"18:30:00",1,"17:30:00");
     }
 
     delayMSUntilAtTime(1,0,0);
@@ -1285,7 +1287,18 @@ void taskJadwalSholat(void * parameter){
 
 
 #define ALERT_COUNTUP_SHOLAT 5*60*1000/*5 menit*/
-#define ALERT_COUNTDOWN_DZIKIR 5*60*1000/*5 menit*/
+#define ALERT_COUNTDOWN_DZIKIR 1*60*1000/*5 menit*/
+
+
+void updateHijriForFirstHalfNight(){
+    //it's time to update hijri date
+    if(hijri_day+1 <= 29){
+      sprintf_P(str_hijri_date, (PGM_P)F("%d%s"), hijri_day+1,(hijri_day >= 10 ? str_hijri_date+2 : str_hijri_date+1));     
+      Serial.print("New Hijri Date :");
+      Serial.println(str_hijri_date);
+      sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
+    }
+}
 
 void taskCountDownJWS(void * parameter){
   for(;;){
@@ -1311,12 +1324,17 @@ void taskCountDownJWS(void * parameter){
     if((clock[3] < subuh[3] && clock[3] >= 0) || (clock[3] >= isya[3] && clock[3] <=86400)){
       sprintf_P(type_jws, (PGM_P)F("subuh"));
       counter = sDistanceFromTimeToTime(clock[0],clock[1],clock[2],subuh[0],subuh[1],subuh[2]);
+
+      if(clock[3] >= isya[3] && clock[3] <=86400){
+        updateHijriForFirstHalfNight();
+      }
+
     } else if(clock[3] < syuruk[3]){
       sprintf_P(type_jws, (PGM_P)F("syuruk"));
       counter = syuruk[3] - clock[3];
 
       //it's time to dzikir in the morning
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,str_clock_full,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
+      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
       resetDMDLoopIndex();
     } else if(clock[3] < dhuha[3]){
       sprintf_P(type_jws, (PGM_P)F("dhuha"));
@@ -1336,18 +1354,14 @@ void taskCountDownJWS(void * parameter){
       counter = maghrib[3] - clock[3];
 
       //it's time to dzikir in the afternoon
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,str_clock_full,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
+      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
       resetDMDLoopIndex();
     } else if(clock[3] < isya[3]){
       sprintf_P(type_jws, (PGM_P)F("isya"));
       counter = isya[3] - clock[3];
 
 
-      //it's time to update hijri date
-      sprintf_P(str_hijri_date, (PGM_P)F("%d%s"), hijri_day+1,(hijri_day >= 10 ? str_hijri_date+2 : str_hijri_date+1));     
-      Serial.print("New Hijri Date :");
-      Serial.println(str_hijri_date);
-      sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
+      updateHijriForFirstHalfNight();
     }
 
     int leftSeconds = counter;
