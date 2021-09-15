@@ -1187,7 +1187,11 @@ void taskDate(void * parameter)
     } else if(weekday == 3){
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
     } else if(weekday == 5){
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi",false,"Ayo Ayo", false,  System5x7,1000,5000,-1,0,"18:30:00",1,"17:30:00");
+      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,-1,0,"18:30:00",1,"17:30:00");
+    }
+
+    if(hijri_day == 12 || hijri_day == 13 || hijri_day == 14){
+      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
     }
 
     delayMSUntilAtTime(1,0,0);
@@ -1335,14 +1339,14 @@ void taskCountDownJWS(void * parameter){
 
       //it's time to dzikir in the morning
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
-      resetDMDLoopIndex();
+      //resetDMDLoopIndex();
     } else if(clock[3] < dhuha[3]){
       sprintf_P(type_jws, (PGM_P)F("dhuha"));
       counter = dhuha[3] - clock[3];
 
       //it's time to sholat dhuha
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktu Sholat Dhuha",false,str_clock_full,false,System5x7,1000,10000,-1,(dzuhur[3]-dhuha[3]-(15*60))*1000);
-      resetDMDLoopIndex();
+      //resetDMDLoopIndex();
     } else if(clock[3] < dzuhur[3]){
       sprintf_P(type_jws, (PGM_P)F("dzuhur"));
       counter = dzuhur[3] - clock[3];
@@ -1355,11 +1359,12 @@ void taskCountDownJWS(void * parameter){
 
       //it's time to dzikir in the afternoon
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
-      resetDMDLoopIndex();
+      //resetDMDLoopIndex();
+
+      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Doa di akhir hari jumat",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
     } else if(clock[3] < isya[3]){
       sprintf_P(type_jws, (PGM_P)F("isya"));
       counter = isya[3] - clock[3];
-
 
       updateHijriForFirstHalfNight();
     }
