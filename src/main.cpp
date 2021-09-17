@@ -33,6 +33,7 @@ TaskHandle_t taskDateHandle;
 TaskHandle_t taskJWSHandle;
 TaskHandle_t taskCountdownJWSHandle;
 TaskHandle_t taskButtonTouchHandle;
+TaskHandle_t taskSchedulerHandle;
 
 static Preferences preferences;
 
@@ -41,8 +42,8 @@ int h = 12; // hours in 12 format
 int m = 0; //minutes
 int s = 0; //seconds
 static char str_clock_full[9] = "--:--:--"; //used by dmd task
-static char str_date[26] = "Minggu, 10 September 2021"; //used by dmd task
-static char str_hijri_date[30] = "10 jumadil akhir 1443";
+static char str_date[26] = "------, -- --------- ----"; //used by dmd task
+static char str_hijri_date[30] = "1-- ------- ----- ----";
 static char str_date_full[55] = "";
 // char timeDay[3];
 // char timeMonth[10];
@@ -472,7 +473,7 @@ void taskDMD(void *parameter)
 
       if(deleteData){
         //reset struct to stop drawing in dmd
-        resetDMDData(DMD_DATA_FLASH_INDEX);
+        resetDMDData(dmd_loop_index);
         //Serial.println("delete");
         continue;
       }
@@ -1416,7 +1417,7 @@ void taskCountDownJWS(void * parameter){
 
     //show alert
     char count_sholat_alert[30] = {0};
-    sprintf_P(count_sholat_alert, (PGM_P)F("Sudah masuk waktu sholat %s"), type_jws);
+    sprintf_P(count_sholat_alert, (PGM_P)F("Sudah masuk waktu %s"), type_jws);
     setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_COUNTUP,count_sholat_alert,"",System5x7,1000,ALERT_COUNTUP_SHOLAT,1);
     resetDMDLoopIndex();
     delay(5000);
@@ -1425,7 +1426,17 @@ void taskCountDownJWS(void * parameter){
 
 
 //=========================================================================
-//==================================   Task Button / Touch Handle  ============================
+//==================================   Task Scheduler  ====================
+//=========================================================================
+void taskScheduler(void * parameter){
+  for(;;){
+
+    delay(1000);
+  }
+}
+
+//=========================================================================
+//==================================   Task Button / Touch Handle  ========
 //=========================================================================
 void taskButtonTouch(void * parameter){
   for(;;){
@@ -1559,6 +1570,16 @@ void setup()
         NULL,           // Parameter to pass
         1,              // Task priority
         &taskDMDHandle, // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE);
+
+    delay(5000);
+    xTaskCreatePinnedToCore(
+        taskScheduler,        // Function that should be called
+        "Scheduler",  // Name of the task (for debugging)
+        5000,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        1,              // Task priority
+        &taskSchedulerHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
   }
 
