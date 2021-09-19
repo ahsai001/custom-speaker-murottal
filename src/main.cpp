@@ -1187,8 +1187,10 @@ void taskDate(void * parameter)
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
     } else if(weekday == 3){
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
-    } else if(weekday == 5){
+    } else if(weekday == 4){
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,-1,0,"18:30:00",1,"17:30:00");
+    } else if(weekday == 5){
+      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,-1,0,"00:01:00",0,"17:30:00");
     }
 
     if(hijri_day == 12 || hijri_day == 13 || hijri_day == 14){
