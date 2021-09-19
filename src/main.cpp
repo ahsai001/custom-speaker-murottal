@@ -15,6 +15,12 @@
 #include "ArduinoJson.h"
 #include <nvs_flash.h>
 #include <Preferences.h>
+#include <FirebaseFS.h>
+#include <FirebaseESP32.h>
+//Provide the token generation process info.
+#include "addons/TokenHelper.h"
+//Provide the RTDB payload printing info and other helper functions.
+#include "addons/RTDBHelper.h"
 
 
 
@@ -415,6 +421,8 @@ void drawTextCenter(const uint8_t * font, const char * str, int top){
 void taskDMD(void *parameter)
 {
   setupDMD();
+  Serial.print("DMD stack size : ");
+  Serial.println(uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     //byte b;
@@ -737,6 +745,9 @@ uint32_t led_off_delay = 500;
 
 void taskToggleLED(void *parameter)
 {
+
+  Serial.print("LED stack size : ");
+  Serial.println(uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     digitalWrite(built_in_led, HIGH);
@@ -820,6 +831,9 @@ void taskKeepWiFiAlive(void *parameter)
     {
       Serial.println("speaker-murottal.local is available");
     }
+
+    Serial.print("Keep Wifi stack size : ");
+    Serial.println(uxTaskGetStackHighWaterMark(NULL));
     stopTaskToggleLED();
   }
 }
@@ -992,6 +1006,9 @@ void taskWebServer(void *parameter)
   server.begin();
   Serial.println("HTTP server started");
 
+
+  Serial.print("Web Server stack size : ");
+  Serial.println(uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     handleServerClient();
@@ -1056,6 +1073,9 @@ void taskClock(void * parameter)
   m = timeinfo.tm_min;
   s = timeinfo.tm_sec;
 
+
+  Serial.print("Clock stack size : ");
+  Serial.println(uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     s = s + 1;
@@ -1197,6 +1217,8 @@ void taskDate(void * parameter)
       setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
     }
 
+    Serial.print("Date stack size : ");
+    Serial.println(uxTaskGetStackHighWaterMark(NULL));
     delayMSUntilAtTime(1,0,0);
   }
 }
@@ -1287,6 +1309,10 @@ void taskJadwalSholat(void * parameter){
 
     doc.clear();
     isJWSReady = true;
+
+
+    Serial.print("JWS stack size : ");
+    Serial.println(uxTaskGetStackHighWaterMark(NULL));
     delayMSUntilAtTime(1,12,0);
   }
 }
@@ -1397,6 +1423,9 @@ void taskCountDownJWS(void * parameter){
     Serial.print(" - ");
     Serial.println(seconds);
 
+
+    Serial.print("Countdown JWS stack size : ");
+    Serial.println(uxTaskGetStackHighWaterMark(NULL));
     while(counter >= 0){
       if(seconds==-1){
         seconds=59;
@@ -1431,10 +1460,88 @@ void taskCountDownJWS(void * parameter){
 //=========================================================================
 //==================================   Task Scheduler  ====================
 //=========================================================================
-void taskScheduler(void * parameter){
-  for(;;){
 
-    delay(1000);
+// Your Firebase Project Web API Key
+#define FB_API_KEY "AIzaSyAQ1OoPvV3_235dZPvZKW5CN-8pQghjJbQ"
+// Your Firebase Realtime database URL
+#define FB_DATABASE_URL "https://custom-speaker-murottal-default-rtdb.asia-southeast1.firebasedatabase.app"
+void taskScheduler(void * parameter){
+  // Firebase Realtime Database Object
+  FirebaseData fbdo;
+  // Firebase Authentication Object
+  FirebaseAuth auth;
+  // Firebase configuration Object
+  FirebaseConfig config;
+  // Firebase database path
+  String databasePath = "/app/nasehat/list"; 
+  // Firebase Unique Identifier
+  String fuid = ""; 
+  // Store device authentication status
+  bool isAuthenticated = false;
+  // configure firebase API Key
+  config.api_key = FB_API_KEY;
+  // configure firebase realtime database url
+  config.database_url = FB_DATABASE_URL;
+
+
+
+  //Optional, use classic HTTP GET and POST requests. 
+  //This option allows get and delete functions (PUT and DELETE HTTP requests) works for 
+  //device connected behind the Firewall that allows only GET and POST requests.   
+  Firebase.enableClassicRequest(fbdo, true);
+
+  //Optional, set the size of HTTP response buffer
+  //Prevent out of memory for large payload but data may be truncated and can't determine its type.
+  fbdo.setResponseSize(8192); //minimum size is 4096 bytes
+
+  // Enable WiFi reconnection 
+  Firebase.reconnectWiFi(true);
+  Serial.println("------------------------------------");
+  Serial.println("Firebase Sign up new user...");
+  // Sign in to firebase Anonymously
+  if (Firebase.signUp(&config, &auth, "", "")){
+    Serial.println("Firebase signup Success");
+    isAuthenticated = true;
+    // Set the database path where updates will be loaded for this device
+    fuid = auth.token.uid.c_str();
+  }
+  else
+  {
+    Serial.printf("Firebase signup Failed, %s\n", config.signer.signupError.message.c_str());
+    isAuthenticated = false;
+  }
+
+  // Assign the callback function for the long running token generation task, see addons/TokenHelper.h
+  config.token_status_callback = tokenStatusCallback;
+  // Initialise the firebase library
+  Firebase.begin(&config, &auth);
+
+  Serial.print("Firebase stack size : ");
+  Serial.println(uxTaskGetStackHighWaterMark(NULL));
+  for(;;){
+    // Check that 10 seconds has elapsed before, device is authenticated and the firebase service is ready.
+    if (isAuthenticated && Firebase.ready()){
+        Serial.println("------------------------------------");
+        Serial.println("Firebase get data...");
+        if(Firebase.getArray(fbdo, databasePath)){
+          FirebaseJsonArray fbja = fbdo.jsonArray();
+          for (size_t i = 0; i < fbja.size(); i++)
+          {
+            FirebaseJsonData result;
+            //result now used as temporary object to get the parse results
+            fbja.get(result, i);
+
+            //Print its value
+            Serial.print("Array index: ");
+            Serial.print(i);
+            Serial.print(", type: ");
+            Serial.print(result.type);
+            Serial.print(", value: ");
+            Serial.println(result.to<String>());
+          }
+        }
+    }
+    delay(60000);
   }
 }
 
@@ -1442,6 +1549,9 @@ void taskScheduler(void * parameter){
 //==================================   Task Button / Touch Handle  ========
 //=========================================================================
 void taskButtonTouch(void * parameter){
+  
+  Serial.print("Button Touch stack size : ");
+  Serial.println(uxTaskGetStackHighWaterMark(NULL));
   for(;;){
     uint16_t touchValue = touchRead(33);
     bool isTouched = touchValue < 20;
@@ -1518,7 +1628,7 @@ void setup()
     xTaskCreatePinnedToCore(
         taskKeepWiFiAlive,  // Function that should be called
         "Keep WiFi Alive",  // Name of the task (for debugging)
-        5000,               // Stack size (bytes)
+        3200,               // Stack size (bytes)
         NULL,               // Parameter to pass
         1,                  // Task priority
         &taskKeepWiFiHandle, // Task handle
@@ -1529,7 +1639,7 @@ void setup()
     xTaskCreatePinnedToCore(
         taskClock,  // Function that should be called
         "Clock",   // Name of the task (for debugging)
-        5000,           // Stack size (bytes)
+        3400,           // Stack size (bytes)
         NULL,           // Parameter to pass
         1,              // Task priority
         &taskClockHandle, // Task handle
@@ -1549,7 +1659,7 @@ void setup()
     xTaskCreatePinnedToCore(
         taskJadwalSholat,  // Function that should be called
         "Jadwal Sholat",   // Name of the task (for debugging)
-        10000,           // Stack size (bytes)
+        5500,           // Stack size (bytes)
         NULL,           // Parameter to pass
         1,              // Task priority
         &taskJWSHandle, // Task handle
@@ -1559,7 +1669,7 @@ void setup()
     xTaskCreatePinnedToCore(
         taskCountDownJWS,  // Function that should be called
         "Countdown Jadwal Sholat",   // Name of the task (for debugging)
-        5000,           // Stack size (bytes)
+        4500,           // Stack size (bytes)
         NULL,           // Parameter to pass
         1,              // Task priority
         &taskCountdownJWSHandle, // Task handle
@@ -1569,17 +1679,17 @@ void setup()
     xTaskCreatePinnedToCore(
         taskDMD,        // Function that should be called
         "Display DMD",  // Name of the task (for debugging)
-        5000,           // Stack size (bytes)
+        4500,           // Stack size (bytes)
         NULL,           // Parameter to pass
         1,              // Task priority
         &taskDMDHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
 
-    delay(5000);
+    delay(6000);
     xTaskCreatePinnedToCore(
         taskScheduler,        // Function that should be called
         "Scheduler",  // Name of the task (for debugging)
-        5000,           // Stack size (bytes)
+        90000,           // Stack size (bytes)
         NULL,           // Parameter to pass
         1,              // Task priority
         &taskSchedulerHandle, // Task handle
