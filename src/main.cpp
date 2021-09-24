@@ -1458,7 +1458,7 @@ void taskCountDownJWS(void * parameter){
 
 
 //=========================================================================
-//==================================   Task Scheduler  ====================
+//==================================   Task Firebase Scheduler  ===========
 //=========================================================================
 
 // Your Firebase Project Web API Key
@@ -1685,16 +1685,16 @@ void setup()
         &taskDMDHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
 
-    delay(6000);
-    xTaskCreatePinnedToCore(
-        taskScheduler,        // Function that should be called
-        "Scheduler",  // Name of the task (for debugging)
-        90000,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority
-        &taskSchedulerHandle, // Task handle
-        CONFIG_ARDUINO_RUNNING_CORE);
-  }
+  //   delay(6000);
+  //   xTaskCreatePinnedToCore(
+  //       taskScheduler,        // Function that should be called
+  //       "Scheduler",  // Name of the task (for debugging)
+  //       90000,           // Stack size (bytes)
+  //       NULL,           // Parameter to pass
+  //       1,              // Task priority
+  //       &taskSchedulerHandle, // Task handle
+  //       CONFIG_ARDUINO_RUNNING_CORE);
+  // }
 
   delay(5000);
   xTaskCreatePinnedToCore(
