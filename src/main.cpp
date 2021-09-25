@@ -39,37 +39,40 @@ TaskHandle_t taskDateHandle;
 TaskHandle_t taskJWSHandle;
 TaskHandle_t taskCountdownJWSHandle;
 TaskHandle_t taskButtonTouchHandle;
-TaskHandle_t taskSchedulerHandle;
+TaskHandle_t taskFirebaseHandle;
 
-static Preferences preferences;
+SemaphoreHandle_t mutex_con;
+SemaphoreHandle_t mutex_dmd;
 
-int h24 = 12; //hours in 24 format
-int h = 12; // hours in 12 format
-int m = 0; //minutes
-int s = 0; //seconds
-static char str_clock_full[9] = "--:--:--"; //used by dmd task
-static char str_date[26] = "------, -- --------- ----"; //used by dmd task
-static char str_hijri_date[30] = "1-- ------- ----- ----";
-static char str_date_full[55] = "";
+Preferences preferences;
+
+volatile int h24 = 12; //hours in 24 format
+volatile int h = 12; // hours in 12 format
+volatile int m = 0; //minutes
+volatile int s = 0; //seconds
+char str_clock_full[9] = "--:--:--"; //used by dmd task
+char str_date[26] = "------, -- --------- ----"; //used by dmd task
+char str_hijri_date[30] = "1-- ------- ----- ----";
+char str_date_full[55] = "";
 // char timeDay[3];
 // char timeMonth[10];
 // char timeYear[5];
-int day;
-int month;
-int year;
-int weekday;
-int hijri_day;
-int hijri_month;
-int hijri_year;
+volatile int day;
+volatile int month;
+volatile int year;
+volatile int weekday;
+volatile int hijri_day;
+volatile int hijri_month;
+volatile int hijri_year;
 
 
-bool isWiFiReady = false;
-bool isClockReady = false;
-bool isDateReady = false;
-bool isDMDReady = false;
-bool isJWSReady = false;
-bool isCountdownJWSReady = false;
-bool isSPIFFSReady = false;
+volatile bool isWiFiReady = false;
+volatile bool isClockReady = false;
+volatile bool isDateReady = false;
+volatile bool isDMDReady = false;
+volatile bool isJWSReady = false;
+volatile bool isCountdownJWSReady = false;
+volatile bool isSPIFFSReady = false;
 
 const uint8_t built_in_led = 2;
 const uint8_t relay = 26;
@@ -82,8 +85,8 @@ char data_jadwal_ashar[9];
 char data_jadwal_maghrib[9];
 char data_jadwal_isya[9];
 
-static char type_jws[8] = "sholat"; //subuh, dzuhur, ashar, maghrib, isya
-static char count_down_jws[9] = "--:--:--"; //04:30:00
+char type_jws[8] = "sholat"; //subuh, dzuhur, ashar, maghrib, isya
+char count_down_jws[9] = "--:--:--"; //04:30:00
 
 //22.30 - 23.45 : 1 jam + 15 menit
 //22.30 - 23.15 : 1 jam + -15 menit
@@ -385,11 +388,11 @@ void setupDMD()
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
   setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,str_clock_full, System5x7,1000,15000,-1);
-  setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
+  //setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
   setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
-  setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
+  //setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
   setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
-  setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
+  //setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
 
   Serial.println("DMD is coming");
 }
@@ -1120,6 +1123,11 @@ void taskClock(void * parameter)
   }
 }
 
+
+const char * getJsonData(const char * link){
+
+}
+
 //===========================================================================
 //==================================   Task Date & Hijri Date  ==============
 //===========================================================================
@@ -1133,92 +1141,97 @@ void taskDate(void * parameter)
       Serial.println("Task date waiting for wifi...");
       delay(5000);
     }
-    
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-    struct tm timeinfo;
-    while(!getLocalTime(&timeinfo)){
-      Serial.println("Date : Failed to obtain time");
-      delay(2000);
+  
+    xSemaphoreTake(mutex_con, portMAX_DELAY); 
+    {
+      configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+      struct tm timeinfo;
+      while(!getLocalTime(&timeinfo)){
+        Serial.println("Date : Failed to obtain time");
+        delay(2000);
+      }
+      
+      Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+
+      day = timeinfo.tm_mday;
+      month = timeinfo.tm_mon; //0-11 since januari
+      year = timeinfo.tm_year+1900;
+      weekday = timeinfo.tm_wday;//0-6 since sunday
+
+      //get hijri date
+      char link[140] = {'\0'};
+      sprintf_P(link, (PGM_P)F("https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=%04d&the_m=%02d&the_d=%02d&the_conv=ctoh&lg=1"), year, month+1, day);
+      Serial.println(link);
+
+      WiFiClientSecure client;
+      HTTPClient http;
+      client.setInsecure();
+
+      // Your Domain name with URL path or IP address with path
+      http.begin(client, link);
+      int httpResponseCode = http.GET();
+
+      if (httpResponseCode>0) {
+        Serial.print("Date HTTP Response code: ");
+        Serial.println(httpResponseCode);
+      } else {
+        Serial.print("Date Error code: ");
+        Serial.println(httpResponseCode);
+      }
+
+      String jsonData = http.getString();
+
+      // Free resources
+      http.end();
+
+      DynamicJsonDocument doc(512);
+      DeserializationError error = deserializeJson(doc, jsonData);
+
+      if (error) {
+        Serial.print(F("Date deserializeJson() failed: "));
+        Serial.println(error.f_str());
+        delay(20000);
+        isDateReady = false;
+        xSemaphoreGive(mutex_con); 
+        continue;
+      }
+
+      const char * hijri_date = doc["tanggal_hijriyah"];
+      sprintf_P(str_hijri_date, (PGM_P)F("%s"), hijri_date);
+      hijri_day = doc["hijri_tanggal"];
+      hijri_month = doc["hijri_bulan"];
+      hijri_year = doc["hijri_tahun"];
+
+
+      String day_names[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jum'at", "Sabtu"};
+      String month_names[] = {"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"};
+
+      memset(str_date,'\0',sizeof(char)*26);
+      sprintf_P(str_date, (PGM_P)F("%s, %02d %s %02d"), day_names[weekday].c_str(), day, month_names[month].c_str(),year);
+      
+      sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
+
+      doc.clear();
+      isDateReady = true;
+
+      if(weekday == 0){
+        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
+      } else if(weekday == 3){
+        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
+      } else if(weekday == 4){
+        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,-1,0,"18:30:00",1,"17:30:00");
+      } else if(weekday == 5){
+        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,-1,0,"00:01:00",0,"17:30:00");
+      }
+
+      if(hijri_day == 12 || hijri_day == 13 || hijri_day == 14){
+        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
+      }
+
+      Serial.print("Date stack size : ");
+      Serial.println(uxTaskGetStackHighWaterMark(NULL));
     }
-
-    Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-
-    day = timeinfo.tm_mday;
-    month = timeinfo.tm_mon; //0-11 since januari
-    year = timeinfo.tm_year+1900;
-    weekday = timeinfo.tm_wday;//0-6 since sunday
-
-    //get hijri date
-    char link[140] = {'\0'};
-    sprintf_P(link, (PGM_P)F("https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=%04d&the_m=%02d&the_d=%02d&the_conv=ctoh&lg=1"), year, month+1, day);
-    Serial.println(link);
-
-    WiFiClientSecure client;
-    HTTPClient http;
-    client.setInsecure();
-
-    // Your Domain name with URL path or IP address with path
-    http.begin(client, link);
-
-    // Send HTTP GET request
-    int httpResponseCode = http.GET();
-
-    if (httpResponseCode>0) {
-      Serial.print("Date HTTP Response code: ");
-      Serial.println(httpResponseCode);
-    } else {
-      Serial.print("Date Error code: ");
-      Serial.println(httpResponseCode);
-    }
-
-    String jsonData = http.getString();
-
-    // Free resources
-    http.end();
-
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, jsonData);
-
-    if (error) {
-      Serial.print(F("Date deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      delay(20000);
-      isDateReady = false;
-      continue;
-    }
-
-    const char * hijri_date = doc["tanggal_hijriyah"];
-    sprintf_P(str_hijri_date, (PGM_P)F("%s"), hijri_date);
-    hijri_day = doc["hijri_tanggal"];
-    hijri_month = doc["hijri_bulan"];
-    hijri_year = doc["hijri_tahun"];
-
-
-    String day_names[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jum'at", "Sabtu"};
-    String month_names[] = {"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"};
-
-    memset(str_date,'\0',sizeof(char)*26);
-    sprintf_P(str_date, (PGM_P)F("%s, %02d %s %02d"), day_names[weekday].c_str(), day, month_names[month].c_str(),year);
-    
-    sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
-    isDateReady = true;
-
-    if(weekday == 0){
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
-    } else if(weekday == 3){
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
-    } else if(weekday == 4){
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,-1,0,"18:30:00",1,"17:30:00");
-    } else if(weekday == 5){
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,-1,0,"00:01:00",0,"17:30:00");
-    }
-
-    if(hijri_day == 12 || hijri_day == 13 || hijri_day == 14){
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
-    }
-
-    Serial.print("Date stack size : ");
-    Serial.println(uxTaskGetStackHighWaterMark(NULL));
+    xSemaphoreGive(mutex_con); 
     delayMSUntilAtTime(1,0,0);
   }
 }
@@ -1234,82 +1247,84 @@ void taskJadwalSholat(void * parameter){
       delay(3000);
       continue;
     }
-    char link[100] = {'\0'};
-    sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%02d/%02d/%02d"), year, month+1, day);
-    Serial.println(link);
-    
-    WiFiClientSecure client;
-    HTTPClient http;
-    client.setInsecure();
+    xSemaphoreTake(mutex_con, portMAX_DELAY);
+    { 
+      char link[100] = {'\0'};
+      sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%02d/%02d/%02d"), year, month+1, day);
+      Serial.println(link);
+      
+      WiFiClientSecure client;
+      HTTPClient http;
+      client.setInsecure();
 
-    // Your Domain name with URL path or IP address with path
-    http.begin(client, link);
-    
-    // Send HTTP GET request
-    int httpResponseCode = http.GET();
-    
-    if (httpResponseCode>0) {
-      Serial.print("JWS HTTP Response code: ");
-      Serial.println(httpResponseCode);
+      // Your Domain name with URL path or IP address with path
+      http.begin(client, link);
+      int httpResponseCode = http.GET();
+      
+      if (httpResponseCode>0) {
+        Serial.print("JWS HTTP Response code: ");
+        Serial.println(httpResponseCode);
+      }
+      else {
+        Serial.print("JWS Error code: ");
+        Serial.println(httpResponseCode);
+      }
+
+      String jsonData = http.getString();
+
+      // Free resources
+      http.end();
+
+      DynamicJsonDocument doc(768);
+      DeserializationError error = deserializeJson(doc, jsonData);
+
+      if (error) {
+        Serial.print(F("JWS deserializeJson() failed: "));
+        Serial.println(error.f_str());
+        delay(20000);
+        isJWSReady = false;
+        xSemaphoreGive(mutex_con); 
+        continue;
+      }
+
+      JsonObject data_jadwal = doc["data"]["jadwal"];
+
+      // for testing only
+      // sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), "02:37");// "04:37"
+      // sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), "02:42");
+      // sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), "03:30");
+      // sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), "04:30");
+      // sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), "05:50");
+      // sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), "06:39");
+      // sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), "07:58");
+
+      sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), data_jadwal["subuh"].as<const char*>());// "04:37"
+      sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), data_jadwal["terbit"].as<const char*>());// "04:37"
+      sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), data_jadwal["dhuha"].as<const char*>());// "04:37"
+      sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), data_jadwal["dzuhur"].as<const char*>());
+      sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), data_jadwal["ashar"].as<const char*>());
+      sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), data_jadwal["maghrib"].as<const char*>());
+      sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), data_jadwal["isya"].as<const char*>());
+      
+      Serial.print("Subuh : ");
+      Serial.println(data_jadwal_subuh);
+      Serial.print("Syuruk : ");
+      Serial.println(data_jadwal_syuruk);
+      Serial.print("Dhuha : ");
+      Serial.println(data_jadwal_dhuha);
+      Serial.print("Dzuhur : ");
+      Serial.println(data_jadwal_dzuhur);
+      Serial.print("Ashar : ");
+      Serial.println(data_jadwal_ashar);
+      Serial.print("Magrib : ");
+      Serial.println(data_jadwal_maghrib);   
+      Serial.print("Isya : ");
+      Serial.println(data_jadwal_isya); 
+
+      doc.clear();
     }
-    else {
-      Serial.print("JWS Error code: ");
-      Serial.println(httpResponseCode);
-    }
-
-    String jsonData = http.getString();
-
-    // Free resources
-    http.end();
-
-    DynamicJsonDocument doc(768);
-    DeserializationError error = deserializeJson(doc, jsonData);
-
-    if (error) {
-      Serial.print(F("JWS deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      delay(20000);
-      isJWSReady = false;
-      continue;
-    }
-
-    JsonObject data_jadwal = doc["data"]["jadwal"];
-
-    // for testing only
-    // sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), "02:37");// "04:37"
-    // sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), "02:42");
-    // sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), "03:30");
-    // sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), "04:30");
-    // sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), "05:50");
-    // sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), "06:39");
-    // sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), "07:58");
-
-    sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), data_jadwal["subuh"].as<const char*>());// "04:37"
-    sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), data_jadwal["terbit"].as<const char*>());// "04:37"
-    sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), data_jadwal["dhuha"].as<const char*>());// "04:37"
-    sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), data_jadwal["dzuhur"].as<const char*>());
-    sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), data_jadwal["ashar"].as<const char*>());
-    sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), data_jadwal["maghrib"].as<const char*>());
-    sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), data_jadwal["isya"].as<const char*>());
-    
-    Serial.print("Subuh : ");
-    Serial.println(data_jadwal_subuh);
-    Serial.print("Syuruk : ");
-    Serial.println(data_jadwal_syuruk);
-    Serial.print("Dhuha : ");
-    Serial.println(data_jadwal_dhuha);
-    Serial.print("Dzuhur : ");
-    Serial.println(data_jadwal_dzuhur);
-    Serial.print("Ashar : ");
-    Serial.println(data_jadwal_ashar);
-    Serial.print("Magrib : ");
-    Serial.println(data_jadwal_maghrib);   
-    Serial.print("Isya : ");
-    Serial.println(data_jadwal_isya); 
-
-    doc.clear();
+    xSemaphoreGive(mutex_con);
     isJWSReady = true;
-
 
     Serial.print("JWS stack size : ");
     Serial.println(uxTaskGetStackHighWaterMark(NULL));
@@ -1464,45 +1479,25 @@ void taskCountDownJWS(void * parameter){
 // Your Firebase Project Web API Key
 #define FB_API_KEY "AIzaSyAQ1OoPvV3_235dZPvZKW5CN-8pQghjJbQ"
 // Your Firebase Realtime database URL
-#define FB_DATABASE_URL "https://custom-speaker-murottal-default-rtdb.asia-southeast1.firebasedatabase.app"
-void taskScheduler(void * parameter){
-  // Firebase Realtime Database Object
+#define FB_DATABASE_URL "https://custom-speaker-murottal-default-rtdb.asia-southeast1.firebasedatabase.app/"
+void taskFirebase(void * parameter){
   FirebaseData fbdo;
-  // Firebase Authentication Object
   FirebaseAuth auth;
-  // Firebase configuration Object
   FirebaseConfig config;
-  // Firebase database path
-  String databasePath = "/app/nasehat/list"; 
-  // Firebase Unique Identifier
+  String nasehatListPath = "/app/nasehat/list";
   String fuid = ""; 
-  // Store device authentication status
   bool isAuthenticated = false;
-  // configure firebase API Key
   config.api_key = FB_API_KEY;
-  // configure firebase realtime database url
   config.database_url = FB_DATABASE_URL;
 
-
-
-  //Optional, use classic HTTP GET and POST requests. 
-  //This option allows get and delete functions (PUT and DELETE HTTP requests) works for 
-  //device connected behind the Firewall that allows only GET and POST requests.   
   Firebase.enableClassicRequest(fbdo, true);
-
-  //Optional, set the size of HTTP response buffer
-  //Prevent out of memory for large payload but data may be truncated and can't determine its type.
   fbdo.setResponseSize(8192); //minimum size is 4096 bytes
-
-  // Enable WiFi reconnection 
-  Firebase.reconnectWiFi(true);
   Serial.println("------------------------------------");
   Serial.println("Firebase Sign up new user...");
   // Sign in to firebase Anonymously
   if (Firebase.signUp(&config, &auth, "", "")){
     Serial.println("Firebase signup Success");
     isAuthenticated = true;
-    // Set the database path where updates will be loaded for this device
     fuid = auth.token.uid.c_str();
   }
   else
@@ -1511,36 +1506,59 @@ void taskScheduler(void * parameter){
     isAuthenticated = false;
   }
 
+  // Assign the user sign in credentials
+  //auth.user.email = "ahsai001@gmail.com";
+  //auth.user.password = "123456ytrewq";
+  //isAuthenticated = true;
+
   // Assign the callback function for the long running token generation task, see addons/TokenHelper.h
   config.token_status_callback = tokenStatusCallback;
-  // Initialise the firebase library
-  Firebase.begin(&config, &auth);
+  //config.signer.tokens.legacy_token = "kNVt4A1fFWNFifHbGMYqPR9hVwL4DE9S1Nyik9iG";
 
+  // Initialise the firebase library
+  xSemaphoreTake(mutex_con, portMAX_DELAY); 
+  Firebase.begin(&config, &auth);
+  xSemaphoreGive(mutex_con);
+
+  //Firebase.reconnectWiFi(true);
   Serial.print("Firebase stack size : ");
   Serial.println(uxTaskGetStackHighWaterMark(NULL));
+  int test = 0;
   for(;;){
-    // Check that 10 seconds has elapsed before, device is authenticated and the firebase service is ready.
-    if (isAuthenticated && Firebase.ready()){
-        Serial.println("------------------------------------");
-        Serial.println("Firebase get data...");
-        if(Firebase.getArray(fbdo, databasePath)){
-          FirebaseJsonArray fbja = fbdo.jsonArray();
-          for (size_t i = 0; i < fbja.size(); i++)
-          {
-            FirebaseJsonData result;
-            //result now used as temporary object to get the parse results
-            fbja.get(result, i);
+    xSemaphoreTake(mutex_con, portMAX_DELAY); 
+    {
+      // Check that 10 seconds has elapsed before, device is authenticated and the firebase service is ready.
+      boolean isFirebaseReady = Firebase.ready();
+      Serial.print("Firebase ready or not ? ");
+      Serial.println(isFirebaseReady);
+      if (isAuthenticated && isFirebaseReady){
+          Serial.println("------------------------------------");
+          Serial.println("Firebase get data...");
 
-            //Print its value
-            Serial.print("Array index: ");
-            Serial.print(i);
-            Serial.print(", type: ");
-            Serial.print(result.type);
-            Serial.print(", value: ");
-            Serial.println(result.to<String>());
+          if(Firebase.getArray(fbdo, nasehatListPath)){
+            FirebaseJsonArray fbja = fbdo.jsonArray();
+            for (size_t i = 0; i < fbja.size(); i++){
+              FirebaseJsonData result;
+              //result now used as temporary object to get the parse results
+              fbja.get(result, i);
+
+              //Print its value
+              Serial.print("Array index: ");
+              Serial.print(i);
+              Serial.print(", type: ");
+              Serial.print(result.type);
+              Serial.print(", value: ");
+              Serial.println(result.to<String>());
+            }
+            Serial.println("Firebase get process...");
           }
-        }
+          Firebase.setInt(fbdo, "/app/test", test);
+          test++;
+          Serial.println("Firebase done data...");
+      }
     }
+    xSemaphoreGive(mutex_con);
+
     delay(60000);
   }
 }
@@ -1592,6 +1610,18 @@ void setup()
   pinMode(built_in_led, OUTPUT);
   Serial.begin(115200);
   delay(1000); // give me time to bring up serial monitor
+
+  mutex_con = xSemaphoreCreateMutex(); 
+  if (mutex_con == NULL) { 
+    Serial.println("Mutex con can not be created"); 
+  }
+
+  mutex_dmd = xSemaphoreCreateMutex(); 
+  if (mutex_dmd == NULL) { 
+    Serial.println("Mutex dmd can not be created"); 
+  } 
+
+ 
   preferences.begin("settings", false);
   //ssid = preferences.getString("ssid","3mbd3vk1d-2");
   //password = preferences.getString("password","marsupiarmadomah3716");
@@ -1685,16 +1715,16 @@ void setup()
         &taskDMDHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
 
-  //   delay(6000);
-  //   xTaskCreatePinnedToCore(
-  //       taskScheduler,        // Function that should be called
-  //       "Scheduler",  // Name of the task (for debugging)
-  //       90000,           // Stack size (bytes)
-  //       NULL,           // Parameter to pass
-  //       1,              // Task priority
-  //       &taskSchedulerHandle, // Task handle
-  //       CONFIG_ARDUINO_RUNNING_CORE);
-  // }
+    delay(6000);
+    xTaskCreatePinnedToCore(
+        taskFirebase,        // Function that should be called
+        "Firebase",  // Name of the task (for debugging)
+        65000,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        1,              // Task priority
+        &taskFirebaseHandle, // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE);
+  }
 
   delay(5000);
   xTaskCreatePinnedToCore(
@@ -1709,7 +1739,6 @@ void setup()
   //vTaskDelete(NULL);
 }
 
-void loop()
-{
+void loop(){
   //do nothing, everything is doing in task
 }
