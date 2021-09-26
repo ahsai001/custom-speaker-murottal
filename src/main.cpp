@@ -69,9 +69,7 @@ volatile int hijri_year;
 volatile bool isWiFiReady = false;
 volatile bool isClockReady = false;
 volatile bool isDateReady = false;
-volatile bool isDMDReady = false;
 volatile bool isJWSReady = false;
-volatile bool isCountdownJWSReady = false;
 volatile bool isSPIFFSReady = false;
 
 const uint8_t built_in_led = 2;
@@ -94,6 +92,16 @@ char count_down_jws[9] = "--:--:--"; //04:30:00
 //22.30 - 22.15 : 0 jam + -15 menit + 24 jam
 //22.30 - 01.45 : -21 jam + 15 menit + 24 jam
 //22.30 - 01.15 : -21 jam + -15 menit + 24 jam
+
+
+char * getAllocatedString(String text){
+  unsigned int length = text.length()+1;
+  char * allocatedString = (char *)malloc(sizeof(char)*(length));
+  memset(allocatedString,'\0',sizeof(char)*length);
+  sprintf_P(allocatedString, (PGM_P)F("%s"), text.c_str());
+  //allocatedString[length-1] = '\0';
+  return allocatedString;
+}
 
 long long sDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
     long long deltaInSecond = ((hours-h24)*3600) + ((minutes-m)*60) + seconds-s;
@@ -278,6 +286,9 @@ uint8_t getAvailableDMDIndex(bool isImportant, uint8_t reservedIndex){
 
 //show with custom
 void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, uint8_t speed1, bool need_free_text1, const char * text2, uint8_t speed2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, long long start_time_inMS){
+  Serial.println("dmd wait.....");
+  xSemaphoreTake(mutex_dmd, portMAX_DELAY); 
+  Serial.println("dmd start.....");
   uint8_t index = getAvailableDMDIndex(isImportant, reservedIndex);
   
   if(index >= DMD_DATA_SIZE){
@@ -311,6 +322,8 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
   dmd_data_list[index].count = 0;
   dmd_data_list[index].life_time_inMS = life_time_inMS;
   dmd_data_list[index].start_time_inMS = start_time_inMS;
+  Serial.println("dmd done .....");
+  xSemaphoreGive(mutex_dmd); 
 }
 
 void resetDMDData(uint8_t index){
@@ -344,29 +357,48 @@ void showFlashMessage(const char * text, bool need_free_text){
 }
 
 
-//show at range time
-void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count,  int16_t fdays, const char * start_time, int16_t tdays, const char * end_time /*09:10:23*/){
+//show at exact range time
+void setupDMDAtExactRangeTime(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS,  int16_t start_day, const char * start_time, int16_t end_day, const char * end_time /*09:10:23*/){
   std::array<unsigned long, 4> start_time_info = getArrayOfTime(start_time);
   std::array<unsigned long, 4> end_time_info = getArrayOfTime(end_time);
-  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(fdays,start_time_info[0],start_time_info[1],start_time_info[2],tdays, end_time_info[0],end_time_info[1],end_time_info[2]);
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count, distance_info[1], millis()+distance_info[0]);
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(start_day,start_time_info[0],start_time_info[1],start_time_info[2],end_day, end_time_info[0],end_time_info[1],end_time_info[2]);
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1, distance_info[1], millis()+distance_info[0]);
 }
 
-//show at exact time
-void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, int16_t days, const char * exact_time /*09:10:23*/){
+//show at exact time for iteration
+void setupDMDAtExactTimeForIteration(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, int16_t day, const char * exact_time /*09:10:23*/){
   std::array<unsigned long, 4> timeInfo = getArrayOfTime(exact_time);
-  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(days,timeInfo[0],timeInfo[1],timeInfo[2],days,timeInfo[0],timeInfo[1],timeInfo[2]);
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count, life_time_inMS, millis()+distance_info[0]);
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(day,timeInfo[0],timeInfo[1],timeInfo[2],day,timeInfo[0],timeInfo[1],timeInfo[2]);
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count, 0, millis()+distance_info[0]);
 }
 
-//show at now for some life time
-void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS){
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count,life_time_inMS,0);
+//show at exact time for some life time
+void setupDMDAtExactTimeForLifeTime(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, unsigned long life_time_inMS, int16_t day, const char * exact_time /*09:10:23*/){
+  std::array<unsigned long, 4> timeInfo = getArrayOfTime(exact_time);
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(day,timeInfo[0],timeInfo[1],timeInfo[2],day,timeInfo[0],timeInfo[1],timeInfo[2]);
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1, life_time_inMS, millis()+distance_info[0]);
+}
+
+//show at exact time forever
+void setupDMDAtExactTimeForever(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int16_t day, const char * exact_time /*09:10:23*/){
+  std::array<unsigned long, 4> timeInfo = getArrayOfTime(exact_time);
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(day,timeInfo[0],timeInfo[1],timeInfo[2],day,timeInfo[0],timeInfo[1],timeInfo[2]);
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1, 0, millis()+distance_info[0]);
 }
 
 //show at now for some iteration
-void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, const char * text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count){
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,false,text2,0,false,font,delay_inMS,duration_inMS,max_count,0,0);
+void setupDMDAtNowForIteration(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count){
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count,0,0);
+}
+
+//show at now for some life time
+void setupDMDAtNowForLifeTime(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, unsigned long life_time_inMS){
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1,life_time_inMS,0);
+}
+
+//show at now forever
+void setupDMDAtNowForever(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS){
+  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1,0,0);
 }
 
 void setupDMD()
@@ -387,13 +419,8 @@ void setupDMD()
   dmd.clearScreen(true);
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
-  setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,str_clock_full, System5x7,1000,15000,-1);
-  //setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,"Kejarlah Akhirat dan Jangan Lupakan Dunia", "",Arial_Black_16,1000,10000,-1);
-  setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
-  //setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,(char*)"Bertakwa dan bertawakal lah hanya kepada Allah", "",Arial_Black_16,1000,10000,-1);
-  setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_STATIC_STATIC,type_jws, count_down_jws,System5x7,1000,10000,-1);
-  //setupDMDdata(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,(char*)"Utamakanlah sholat dan sabar", "",Arial_Black_16,1000,10000,-1);
-
+  //setup clock
+  setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,15000);
   Serial.println("DMD is coming");
 }
 
@@ -964,8 +991,7 @@ void taskWebServer(void *parameter)
   server.on("/get-setting", []()
             {
               String scrolltext = server.arg("scrolltext");
-              char * info = (char *)malloc(sizeof(char)*(scrolltext.length()+1));
-              sprintf_P(info, (PGM_P)F("%s"), scrolltext.c_str());              
+              char * info = getAllocatedString(scrolltext);            
               showFlashMessage(info,true);
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
@@ -1215,17 +1241,17 @@ void taskDate(void * parameter)
       isDateReady = true;
 
       if(weekday == 0){
-        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
+        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false, System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
       } else if(weekday == 3){
-        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
+        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
       } else if(weekday == 4){
-        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,-1,0,"18:30:00",1,"17:30:00");
+        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,0,"18:30:00",1,"17:30:00");
       } else if(weekday == 5){
-        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,-1,0,"00:01:00",0,"17:30:00");
+        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,0,"00:01:00",0,"17:30:00");
       }
 
       if(hijri_day == 12 || hijri_day == 13 || hijri_day == 14){
-        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,-1,0,"09:00:00",0,"23:59:00");
+        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
       }
 
       Serial.print("Date stack size : ");
@@ -1352,7 +1378,6 @@ void taskCountDownJWS(void * parameter){
   for(;;){
     if(!isJWSReady){
       Serial.println("Task countdown-jws waiting for jws...");
-      isCountdownJWSReady = false;
       delay(3000);
       continue;
     }
@@ -1382,14 +1407,14 @@ void taskCountDownJWS(void * parameter){
       counter = syuruk[3] - clock[3];
 
       //it's time to dzikir in the morning
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
+      setupDMDAtNowForLifeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
       //resetDMDLoopIndex();
     } else if(clock[3] < dhuha[3]){
       sprintf_P(type_jws, (PGM_P)F("dhuha"));
       counter = dhuha[3] - clock[3];
 
       //it's time to sholat dhuha
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktu Sholat Dhuha",false,str_clock_full,false,System5x7,1000,10000,-1,(dzuhur[3]-dhuha[3]-(15*60))*1000);
+      setupDMDAtNowForLifeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktu Sholat Dhuha",false,str_clock_full,false,System5x7,1000,10000,(dzuhur[3]-dhuha[3]-(15*60))*1000);
       //resetDMDLoopIndex();
     } else if(clock[3] < dzuhur[3]){
       sprintf_P(type_jws, (PGM_P)F("dzuhur"));
@@ -1402,10 +1427,10 @@ void taskCountDownJWS(void * parameter){
       counter = maghrib[3] - clock[3];
 
       //it's time to dzikir in the afternoon
-      setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
+      setupDMDAtNowForLifeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
       //resetDMDLoopIndex();
       if(weekday == 5){
-        setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Doa di akhir hari jumat",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,-1,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
+        setupDMDAtNowForLifeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Doa di akhir hari jumat",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
       }
     } else if(clock[3] < isya[3]){
       sprintf_P(type_jws, (PGM_P)F("isya"));
@@ -1452,7 +1477,6 @@ void taskCountDownJWS(void * parameter){
       }
       //display
       sprintf_P(count_down_jws, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-      isCountdownJWSReady = true;
       //Serial.print("String Countdown : ");
       //Serial.print(type_jws);
       //Serial.print(" : ");
@@ -1465,7 +1489,7 @@ void taskCountDownJWS(void * parameter){
     //show alert
     char count_sholat_alert[30] = {0};
     sprintf_P(count_sholat_alert, (PGM_P)F("Sudah masuk waktu %s"), type_jws);
-    setupDMDdata(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_COUNTUP,count_sholat_alert,"",System5x7,1000,ALERT_COUNTUP_SHOLAT,1);
+    setupDMDAtNowForIteration(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_COUNTUP,getAllocatedString(count_sholat_alert),true,"",false,System5x7,1000,ALERT_COUNTUP_SHOLAT,1);
     resetDMDLoopIndex();
     delay(5000);
   }
@@ -1523,7 +1547,7 @@ void taskFirebase(void * parameter){
   //Firebase.reconnectWiFi(true);
   Serial.print("Firebase stack size : ");
   Serial.println(uxTaskGetStackHighWaterMark(NULL));
-  int test = 0;
+  //int test = 0;
   for(;;){
     xSemaphoreTake(mutex_con, portMAX_DELAY); 
     {
@@ -1549,17 +1573,21 @@ void taskFirebase(void * parameter){
               Serial.print(result.type);
               Serial.print(", value: ");
               Serial.println(result.to<String>());
+
+              char * info = getAllocatedString(result.to<String>());
+              setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,info,true,"",false,Arial_Black_16,1000,10000,msDistanceFromNowToTime(23, 59, 0));
+              setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
+              setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_COUNTDOWN,type_jws,false,count_down_jws,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
             }
             Serial.println("Firebase get process...");
           }
-          Firebase.setInt(fbdo, "/app/test", test);
-          test++;
+          //Firebase.setInt(fbdo, "/app/test", test);
+          //test++;
           Serial.println("Firebase done data...");
       }
     }
     xSemaphoreGive(mutex_con);
-
-    delay(60000);
+    delayMSUntilAtTime(1,20,0);
   }
 }
 
