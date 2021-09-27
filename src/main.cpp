@@ -78,7 +78,7 @@ volatile bool isWebSocketReady = false;
 const uint8_t built_in_led = 2;
 const uint8_t relay = 26;
 
-const uint8_t marquee_speed = 20;
+const uint8_t marquee_speed = 27;
 
 char data_jadwal_subuh[9];
 char data_jadwal_syuruk[9];
@@ -197,6 +197,7 @@ void taskWebSocketServer(void * paramater){
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
   isWebSocketReady = true;
+  logln("Web Socket server started");
   logf("Web socket stack size : %d", uxTaskGetStackHighWaterMark(NULL));
   for(;;){
     webSocket.loop();
@@ -347,7 +348,6 @@ struct DMD_Data dmd_data_list[DMD_DATA_SIZE]; //index 0 - 5 for important messag
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN);
 
 hw_timer_t *timer = NULL;
-String scrollingText = "Assalamu'alaikum";
 
 void IRAM_ATTR triggerScan()
 {
@@ -517,12 +517,20 @@ void setupDMD()
   ledcWrite(0, 20);
 
   dmd.clearScreen(true);
-  marqueeText(Arial_Black_16, scrollingText.c_str(),1);
+  marqueeText(Arial_Black_16, "Assalamu'alaikum",1);
   dmd.clearScreen(true);
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
   //setup clock
-  setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,15000);
+  wifi_mode_t mode = WiFi.getMode();
+  if(mode == WIFI_MODE_STA){
+    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,15000);
+  } else if(mode == WIFI_MODE_AP){
+    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"1. silakan connect ke wifi 'Speaker Murottal AP' dengan password 'qwerty654321'",false,"Cara Setup",false,System5x7,1000,5000);
+    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"2. Akses website http://speaker-murottal.local",false,"Cara Setup",false,System5x7,1000,5000);
+    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"3. Masuk menu 'Wifi manager' dan set wifi akses anda yg terkoneksi ke internet",false,"Cara Setup",false,System5x7,1000,5000);
+    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"4. silakan restart device anda",false,"Cara Setup",false,System5x7,1000,5000);
+  }
   logln("DMD is coming");
 }
 
@@ -867,6 +875,21 @@ void taskDMD(void *parameter)
 }
 
 
+void startTaskDMD(){
+  xTaskCreatePinnedToCore(
+      taskDMD,        // Function that should be called
+      "Display DMD",  // Name of the task (for debugging)
+      4500,           // Stack size (bytes)
+      NULL,           // Parameter to pass
+      1,              // Task priority
+      &taskDMDHandle, // Task handle
+      CONFIG_ARDUINO_RUNNING_CORE);
+}
+
+void stopTaskDMD(){
+  vTaskDelete(taskDMDHandle);
+}
+
 
 //================================================================================
 //==================================   Task Toggle LED  ==========================
@@ -972,7 +995,7 @@ void taskKeepWiFiAlive(void *parameter)
 //================================================================================
 //==================================   Task Web Server  ==========================
 //================================================================================
-const char index_html_wifi_cred[] PROGMEM = R"rawliteral(
+const char index_html_wifi[] PROGMEM = R"rawliteral(
   <!DOCTYPE HTML>
 <html>
  <head>
@@ -985,7 +1008,7 @@ const char index_html_wifi_cred[] PROGMEM = R"rawliteral(
  </head>
  <body>
   <h3>Enter your WiFi credentials</h3>
-  <form action="/setwifi" method="post">
+  <form action="/wifi" method="post">
   <p>
    <label>SSID:&nbsp;</label>
    <input maxlength="30" name="ssid"><br>
@@ -1020,7 +1043,7 @@ const char index_html_setting[] PROGMEM = R"rawliteral(
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
   </head><body>
   <form action="/get-setting">
-    Scrolling Text: <input type="text" name="scrolltext">
+    Flash Message: <input type="text" name="scrolltext">
     <input type="submit" value="Notify">
   </form><br>
   <p>Brightness: <span id="brightnessPos"></span> %</p>
@@ -1123,7 +1146,7 @@ const char index_html_ws[] PROGMEM = R"rawliteral(
     </style>
   </head>
   <body>
-    <h1>Received Logs:</h1>
+    <h1 id="heading">Received Logs:</h1>
     <p id="message"></p>
     <button type="button" id="btn_reset">reset</button>
     <br>
@@ -1134,6 +1157,7 @@ const char index_html_ws[] PROGMEM = R"rawliteral(
   </body>
   <script>
     var Socket;
+    var heading = document.getElementById("heading");
     var p_message = document.getElementById("message");
     var btn_reset = document.getElementById("btn_reset");
     var cb_on = document.getElementById("cb_on");
@@ -1148,7 +1172,9 @@ const char index_html_ws[] PROGMEM = R"rawliteral(
     function handleClick(cb) {
       console.log("Clicked, new value = " + cb.checked);
       if(cb.checked){
-        
+        heading.innerHTML = "Received Logs: <small>active</small>";
+      } else {
+        heading.innerHTML = "Received Logs: <small>inactive</small>";
       }
     }
     function processCommand(event) {
@@ -1169,12 +1195,47 @@ const char index_html_ws[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
+const char index_html_root[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Log Serial</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        background-color: #e6d8d5;
+        text-align: center;
+      }
+      a {
+        display: block;
+        line-height: 30px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Selamat datang sahabat pengguna Speaker Murottal by AhsaiLabs</h1>
+    <a href="/wifi">Wifi Manager</a>
+    <a href="/setting">Settings</a>
+    <a href="/logs">Show Logs</a>
+    <a href="/restart">Restart</a>
+  </body>
+  <script>
+    function init() {
+    }
+    window.onload = function (event) {
+      init();
+    };
+  </script>
+</html>
+)rawliteral";
+
 WebServer server(80);
 void handleWebRoot()
 {
-  digitalWrite(built_in_led, 0);
-  server.send(200, "text/plain", "Selamat datang sahabat pengguna Speaker Murottal by AhsaiLabs");
-  digitalWrite(built_in_led, 1);
+  //digitalWrite(built_in_led, 0);
+  server.send(200, "text/html", index_html_root);
+  //digitalWrite(built_in_led, 1);
 }
 
 void handleWebNotFound()
@@ -1206,9 +1267,6 @@ void taskWebServer(void *parameter)
 {
   server.on("/", handleWebRoot);
 
-  server.on("/check", []()
-            { server.send(200, "text/plain", "this works as well"); });
-
   server.on("/setting", []()
             { server.send(200, "text/html", index_html_setting); });
 
@@ -1234,16 +1292,16 @@ void taskWebServer(void *parameter)
               ESP.restart();
             });
 
-  server.on("/setwifi",[](){
+  server.on("/wifi",[](){
             if (server.hasArg("ssid")&& server.hasArg("password")) {
               String ssid = server.arg("ssid");
               String password = server.arg("password");
               preferences.putString("ssid", ssid);
               preferences.putString("password", password);
               server.send(200, "text/plain", "setting wifi berhasil, silakan restart");
-              ESP.restart();
+              //ESP.restart();
             } else {
-              server.send(200, "text/html", index_html_wifi_cred);
+              server.send(200, "text/html", index_html_wifi);
             }
   });
 
@@ -1923,6 +1981,9 @@ void setup()
 
     startTaskWebSocketServer();
     delay(5000);
+
+    startTaskDMD();
+    delay(6000);
   } else {
     xTaskCreatePinnedToCore(
         taskKeepWiFiAlive,  // Function that should be called
@@ -1981,14 +2042,7 @@ void setup()
         CONFIG_ARDUINO_RUNNING_CORE);
     delay(5000);
 
-    xTaskCreatePinnedToCore(
-        taskDMD,        // Function that should be called
-        "Display DMD",  // Name of the task (for debugging)
-        4500,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority
-        &taskDMDHandle, // Task handle
-        CONFIG_ARDUINO_RUNNING_CORE);
+    startTaskDMD();
     delay(6000);
 
     xTaskCreatePinnedToCore(
