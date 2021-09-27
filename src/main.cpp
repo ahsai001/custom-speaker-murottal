@@ -1123,22 +1123,21 @@ const char index_html_ws[] PROGMEM = R"rawliteral(
     </style>
   </head>
   <body>
-    <h1>Received message:</h1>
+    <h1>Received Logs:</h1>
     <p id="message"></p>
-    <button type="button" id="btn_on">
-      <h1>reset</h1></button>
+    <button type="button" id="btn_reset">reset</button>
+    <br>
     <label class="switch">
-      <input id="cb" type="checkbox" onclick="handleClick(this);" />
+      <input id="cb_on" type="checkbox" onclick="handleClick(this);" />
       <span class="slider round"></span>
     </label>
   </body>
   <script>
     var Socket;
-    var pMessage = document.getElementById("message");
-    var cb = document.getElementById("btn_on");
-    document
-      .getElementById("btn_reset")
-      .addEventListener("click", button_reset_pressed);
+    var p_message = document.getElementById("message");
+    var btn_reset = document.getElementById("btn_reset");
+    var cb_on = document.getElementById("cb_on");
+    btn_reset.addEventListener("click", button_reset_pressed);
     function init() {
       Socket = new WebSocket("ws://" + window.location.hostname + ":81/");
       Socket.onmessage = function (event) {
@@ -1148,17 +1147,20 @@ const char index_html_ws[] PROGMEM = R"rawliteral(
 
     function handleClick(cb) {
       console.log("Clicked, new value = " + cb.checked);
+      if(cb.checked){
+        
+      }
     }
     function processCommand(event) {
-      if (cb.checked) {
+      if (cb_on.checked) {
         var log = event.data;
-        document.getElementById("message").innerHTML = pMessage.innerHTML + log;
+        p_message.innerHTML = p_message.innerHTML + log;
         console.log(log);
       }
     }
     function button_reset_pressed() {
       //Socket.send("on");
-      pMessage.innerHTML = "";
+      p_message.innerHTML = "...";
     }
     window.onload = function (event) {
       init();
