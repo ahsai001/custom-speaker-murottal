@@ -7,6 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <WiFiClient.h>
 #include <WebServer.h>
+#include <WebSocketsServer.h>
 #include <ESPmDNS.h>
 #include <DMD32.h>
 #include "fonts/SystemFont5x7.h"
@@ -40,6 +41,7 @@ TaskHandle_t taskJWSHandle;
 TaskHandle_t taskCountdownJWSHandle;
 TaskHandle_t taskButtonTouchHandle;
 TaskHandle_t taskFirebaseHandle;
+TaskHandle_t taskWebSocketHandle;
 
 SemaphoreHandle_t mutex_con;
 SemaphoreHandle_t mutex_dmd;
@@ -71,9 +73,12 @@ volatile bool isClockReady = false;
 volatile bool isDateReady = false;
 volatile bool isJWSReady = false;
 volatile bool isSPIFFSReady = false;
+volatile bool isWebSocketReady = false;
 
 const uint8_t built_in_led = 2;
 const uint8_t relay = 26;
+
+const uint8_t marquee_speed = 20;
 
 char data_jadwal_subuh[9];
 char data_jadwal_syuruk[9];
@@ -92,6 +97,113 @@ char count_down_jws[9] = "--:--:--"; //04:30:00
 //22.30 - 22.15 : 0 jam + -15 menit + 24 jam
 //22.30 - 01.45 : -21 jam + 15 menit + 24 jam
 //22.30 - 01.15 : -21 jam + -15 menit + 24 jam
+
+//================================================================================
+//==================================   Task Web Socket Server  ===================
+//================================================================================
+WebSocketsServer webSocket = WebSocketsServer(81);
+
+void log(const char * message){
+  Serial.print(message);
+  if(isWebSocketReady){
+    webSocket.broadcastTXT(message, strlen(message));
+  }
+}
+
+
+void logln(const char * message){
+  log(message);
+  Serial.println();
+  if(isWebSocketReady){
+    webSocket.broadcastTXT("<br>",4, false);
+  }
+}
+
+void logf(const char *format, ...){
+  char loc_buf[64];
+  char * temp = loc_buf;
+  va_list arg;
+  va_list copy;
+  va_start(arg, format);
+  va_copy(copy, arg);
+  int len = vsnprintf(temp, sizeof(loc_buf), format, copy);
+  va_end(copy);
+  if(len < 0) {
+      va_end(arg);
+      return;
+  };
+  if(len >= sizeof(loc_buf)){
+      temp = (char*) malloc(len+1);
+      if(temp == NULL) {
+          va_end(arg);
+          return;
+      }
+      len = vsnprintf(temp, len+1, format, arg);
+  }
+  va_end(arg);
+
+  Serial.print(temp);
+  Serial.println();
+  if(isWebSocketReady){
+    webSocket.broadcastTXT(temp, len, false);
+    webSocket.broadcastTXT("<br>",4, false);
+  }
+  if(temp != loc_buf){
+      free(temp);
+  }
+}
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+    switch(type) {
+        case WStype_DISCONNECTED:
+            Serial.printf("[%u] Disconnected!\n", num);
+            break;
+        case WStype_CONNECTED:
+            {
+                IPAddress ip = webSocket.remoteIP(num);
+                Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
+
+				        // send message to client
+				        webSocket.sendTXT(num, "Connected");
+            }
+            break;
+        case WStype_TEXT:
+            Serial.printf("[%u] get Text: %s\n", num, payload);
+
+            // send message to client
+            webSocket.sendTXT(num, "Command Received : OK");
+
+            // send data to all connected clients
+            // webSocket.broadcastTXT("message here");
+            break;
+        case WStype_BIN:
+            Serial.printf("[%u] get binary length: %u\n", num, length);
+            //hexdump(payload, length);
+
+            // send message to client
+            // webSocket.sendBIN(num, payload, length);
+            break;
+		case WStype_ERROR:			
+		case WStype_FRAGMENT_TEXT_START:
+		case WStype_FRAGMENT_BIN_START:
+		case WStype_FRAGMENT:
+		case WStype_FRAGMENT_FIN:
+			break;
+    }
+}
+
+void taskWebSocketServer(void * paramater){
+  isWebSocketReady = false;
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
+  isWebSocketReady = true;
+  logf("Web socket stack size : %d", uxTaskGetStackHighWaterMark(NULL));
+  for(;;){
+    webSocket.loop();
+    delay(1000);
+  }
+}
+
 
 
 char * getAllocatedString(String text){
@@ -170,8 +282,8 @@ void eraseNVS(){
 }
 
 std::array<unsigned long, 4>  getArrayOfTime(const char * time){
-  //Serial.print("getArrayOfTime : ");
-  //Serial.print(time);
+  //log("getArrayOfTime : ");
+  //log(time);
 
   char copied_time[9] = {'\0'};
   sprintf_P(copied_time, (PGM_P)F("%s"), time);
@@ -186,14 +298,14 @@ std::array<unsigned long, 4>  getArrayOfTime(const char * time){
       token = strtok(NULL, delimiter);
   }
   as[3] = (as[0]*3600)+(as[1]*60)+as[2];
-  // Serial.print("=>");
-  // Serial.print(as[0]);
-  // Serial.print("-");
-  // Serial.print(as[1]);
-  // Serial.print("-");
-  // Serial.print(as[2]);
-  // Serial.print("-");
-  // Serial.println(as[3]);
+  // log("=>");
+  // log(as[0]);
+  // log("-");
+  // log(as[1]);
+  // log("-");
+  // log(as[2]);
+  // log("-");
+  // logln(as[3]);
   return as;
 }
 
@@ -251,7 +363,7 @@ void marqueeText(const uint8_t *font, const char * text, int top){
   boolean ret = false;
   while (!ret)
   {
-    if ((timer + 30) < millis())
+    if ((timer + marquee_speed) < millis())
     {
       ret = dmd.stepMarquee(-1, 0);
       timer = millis();
@@ -286,27 +398,17 @@ uint8_t getAvailableDMDIndex(bool isImportant, uint8_t reservedIndex){
 
 //show with custom
 void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, uint8_t speed1, bool need_free_text1, const char * text2, uint8_t speed2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, long long start_time_inMS){
-  Serial.println("dmd wait.....");
+  logln("dmd wait.....");
   xSemaphoreTake(mutex_dmd, portMAX_DELAY); 
-  Serial.println("dmd start.....");
+  logln("dmd start.....");
   uint8_t index = getAvailableDMDIndex(isImportant, reservedIndex);
   
   if(index >= DMD_DATA_SIZE){
-    Serial.println("DMD slot is full");
+    logln("DMD slot is full");
+    xSemaphoreGive(mutex_dmd); 
     return;
   }
-
-  Serial.print(text1);
-  Serial.print(" : ");
-  Serial.print(text2);
-  Serial.print(",index : ");
-  Serial.print(index);
-  Serial.print(",type : ");
-  Serial.print(type);
-  Serial.print(",max_count : ");
-  Serial.print(max_count);
-  Serial.print(",life_time : ");
-  Serial.println(life_time_inMS);
+  logf("%s : %s,index : %d,type : %d,max_count : %d,life_time : %d", text1,text2,index,type,max_count,life_time_inMS);
 
   dmd_data_list[index].type = type;
   dmd_data_list[index].text1 = (char*)text1;
@@ -322,7 +424,7 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
   dmd_data_list[index].count = 0;
   dmd_data_list[index].life_time_inMS = life_time_inMS;
   dmd_data_list[index].start_time_inMS = start_time_inMS;
-  Serial.println("dmd done .....");
+  logln("dmd done .....");
   xSemaphoreGive(mutex_dmd); 
 }
 
@@ -421,7 +523,7 @@ void setupDMD()
 
   //setup clock
   setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,15000);
-  Serial.println("DMD is coming");
+  logln("DMD is coming");
 }
 
 unsigned int stringWidth(const uint8_t *font, const char * str){
@@ -451,8 +553,7 @@ void drawTextCenter(const uint8_t * font, const char * str, int top){
 void taskDMD(void *parameter)
 {
   setupDMD();
-  Serial.print("DMD stack size : ");
-  Serial.println(uxTaskGetStackHighWaterMark(NULL));
+  logf("DMD stack size : %d", uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     //byte b;
@@ -468,55 +569,55 @@ void taskDMD(void *parameter)
 
       DMD_Data * item = dmd_data_list+dmd_loop_index;
 
-      // Serial.println("here 1");
-      // Serial.print("index : ");
-      // Serial.print(dmd_loop_index);
-      // Serial.print(",type : ");
-      // Serial.print(item->type);
-      // Serial.print(",text1 : ");
-      // Serial.print(item->text1);
-      // Serial.print(",text2 : ");
-      // Serial.print(item->text2);
-      // Serial.print(",start_time : ");
-      // Serial.print(item->start_time_inMS);
-      // Serial.print(",max_count : ");
-      // Serial.print(item->max_count);
-      // Serial.print(",life_time : ");
-      // Serial.println(item->life_time_inMS);
-      // Serial.println("here 2");
+      // logln("here 1");
+      // log("index : ");
+      // log(dmd_loop_index);
+      // log(",type : ");
+      // log(item->type);
+      // log(",text1 : ");
+      // log(item->text1);
+      // log(",text2 : ");
+      // log(item->text2);
+      // log(",start_time : ");
+      // log(item->start_time_inMS);
+      // log(",max_count : ");
+      // log(item->max_count);
+      // log(",life_time : ");
+      // logln(item->life_time_inMS);
+      // logln("here 2");
 
       if(item->type < 0){
-        //Serial.println("no type");
+        //logln("no type");
         continue;
       }
 
       unsigned long start  = millis();
 
       if(item->start_time_inMS > 0 && start < item->start_time_inMS){
-        //Serial.println("dont go now");
+        //logln("dont go now");
         continue;
       }
 
       //Logic to destroy DMDData
       bool deleteData = false;
       if(item->max_count > 0 && item->count >= item->max_count){
-        //Serial.println("max_count > 0");
+        //logln("max_count > 0");
         deleteData = true;
       }
 
       if(item->life_time_inMS > 0 && (millis()-item->start_time_inMS) > item->life_time_inMS){
-        //Serial.println("life_time_inMS > 0");
+        //logln("life_time_inMS > 0");
         deleteData = true;
       }
 
       if(deleteData){
         //reset struct to stop drawing in dmd
         resetDMDData(dmd_loop_index);
-        //Serial.println("delete");
+        //logln("delete");
         continue;
       }
 
-      //Serial.println("go.................");
+      //logln("go.................");
       dmd.clearScreen(true);
       item->count++;
       while(start + item->duration_inMS > millis()){
@@ -544,7 +645,7 @@ void taskDMD(void *parameter)
                     start = millis();
                     counter--;
                   }
-                  if (millis() - timer > 30){
+                  if (millis() - timer > marquee_speed){
                     dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                     if(posx < (-1*width)){
                       posx = (32*DISPLAYS_ACROSS) - 1;
@@ -573,7 +674,7 @@ void taskDMD(void *parameter)
                 if(need_reset_dmd_loop_index){
                   break;
                 }
-                if ((timer + 30) < millis())
+                if ((timer + marquee_speed) < millis())
                 {
                   ret = dmd.stepMarquee(-1, 0);
                   timer = millis();
@@ -626,7 +727,7 @@ void taskDMD(void *parameter)
                   start = millis();
                 }
 
-                if (millis() - timer > 30){
+                if (millis() - timer > marquee_speed){
                   dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                   if(posx < (-1*width)){
                     posx = (32*DISPLAYS_ACROSS) - 1;
@@ -672,7 +773,7 @@ void taskDMD(void *parameter)
                   start = millis();
                 }
 
-                if (millis() - timer > 30){
+                if (millis() - timer > marquee_speed){
                   dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                   if(posx < (-1*width)){
                     posx = (32*DISPLAYS_ACROSS) - 1;
@@ -776,8 +877,7 @@ uint32_t led_off_delay = 500;
 void taskToggleLED(void *parameter)
 {
 
-  Serial.print("LED stack size : ");
-  Serial.println(uxTaskGetStackHighWaterMark(NULL));
+  //logf("LED stack size : %d", uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     digitalWrite(built_in_led, HIGH);
@@ -829,7 +929,7 @@ void taskKeepWiFiAlive(void *parameter)
     isWiFiReady = false;
     startTaskToggleLED();
 
-    Serial.println("[WIFI] Connecting");
+    logln("[WIFI] Connecting");
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), password.c_str());
 
@@ -845,25 +945,24 @@ void taskKeepWiFiAlive(void *parameter)
     // sleep for a while and then retry.
     if (WiFi.status() != WL_CONNECTED)
     {
-      Serial.println("[WIFI] FAILED");
+      logln("[WIFI] FAILED");
       stopTaskToggleLED();
       delay(WIFI_RECOVER_TIME_MS);
       continue;
     }
 
     isWiFiReady = true;
-    Serial.print("Connected to ");
-    Serial.println(ssid);
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
+    log("Connected to ");
+    logln(ssid.c_str());
+    log("IP address: ");
+    logln(WiFi.localIP().toString().c_str());
 
     if (MDNS.begin("speaker-murottal"))
     {
-      Serial.println("speaker-murottal.local is available");
+      logln("speaker-murottal.local is available");
     }
 
-    Serial.print("Keep Wifi stack size : ");
-    Serial.println(uxTaskGetStackHighWaterMark(NULL));
+    logf("Keep Wifi stack size : %d", uxTaskGetStackHighWaterMark(NULL));
     stopTaskToggleLED();
   }
 }
@@ -873,7 +972,7 @@ void taskKeepWiFiAlive(void *parameter)
 //================================================================================
 //==================================   Task Web Server  ==========================
 //================================================================================
-const char index_html_ap[] PROGMEM = R"rawliteral(
+const char index_html_wifi_cred[] PROGMEM = R"rawliteral(
   <!DOCTYPE HTML>
 <html>
  <head>
@@ -944,8 +1043,66 @@ const char index_html_setting[] PROGMEM = R"rawliteral(
   </script>
 </body></html>)rawliteral";
 
-WebServer server(80);
+const char index_html_ws[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Log Serial</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        background-color: #e6d8d5;
+        text-align: center;
+      }
+      p {
+        background-color: #a59999;
+        color: #020000;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Received message: </h1>
+    <p id="message"></p>
+    <button type="button" id="btn_on">
+      <h1>ON</h1></button
+    ><button type="button" id="btn_off">
+      <h1>OFF</h1>
+    </button>
+  </body>
+  <script>
+    var Socket;
+    document
+      .getElementById("btn_on")
+      .addEventListener("click", button_on_pressed);
+    document
+      .getElementById("btn_off")
+      .addEventListener("click", button_off_pressed);
+    function init() {
+      Socket = new WebSocket("ws://" + window.location.hostname + ":81/");
+      Socket.onmessage = function (event) {
+        processCommand(event);
+      };
+    }
+    function processCommand(event) {
+      var log = event.data;
+      document.getElementById("message").innerHTML = document.getElementById("message").innerHTML+log;
+      console.log(log);
+    }
+    function button_on_pressed() {
+      Socket.send("on");
+    }
+    function button_off_pressed() {
+      Socket.send("off");
+    }
+    window.onload = function (event) {
+      init();
+    };
+  </script>
+</html>
+)rawliteral";
 
+WebServer server(80);
 void handleWebRoot()
 {
   digitalWrite(built_in_led, 0);
@@ -1019,7 +1176,7 @@ void taskWebServer(void *parameter)
               server.send(200, "text/plain", "setting wifi berhasil, silakan restart");
               ESP.restart();
             } else {
-              server.send(200, "text/html", index_html_ap);
+              server.send(200, "text/html", index_html_wifi_cred);
             }
   });
 
@@ -1030,20 +1187,51 @@ void taskWebServer(void *parameter)
             //ESP.restart();
   });
 
+  server.on("/logs",[](){
+            server.send(200, "text/html", index_html_ws);
+  });
+
   server.onNotFound(handleWebNotFound);
 
   server.begin();
-  Serial.println("HTTP server started");
-
-
-  Serial.print("Web Server stack size : ");
-  Serial.println(uxTaskGetStackHighWaterMark(NULL));
+  logln("HTTP server started");
+  logf("Web Server stack size : %d",uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     handleServerClient();
   }
 }
 
+
+void startTaskWebSocketServer(){
+  xTaskCreatePinnedToCore(
+      taskWebSocketServer,  // Function that should be called
+      "Web Socket",   // Name of the task (for debugging)
+      5000,           // Stack size (bytes)
+      NULL,           // Parameter to pass
+      1,              // Task priority
+      &taskWebSocketHandle, // Task handle
+      CONFIG_ARDUINO_RUNNING_CORE);
+}
+
+void stopTaskWebSocketServer(){
+  vTaskDelete(taskWebSocketHandle);
+}
+
+void startTaskWebServer(){
+  xTaskCreatePinnedToCore(
+      taskWebServer,  // Function that should be called
+      "Web Server",   // Name of the task (for debugging)
+      5000,           // Stack size (bytes)
+      NULL,           // Parameter to pass
+      1,              // Task priority
+      &taskWebHandle, // Task handle
+      CONFIG_ARDUINO_RUNNING_CORE);
+}
+
+void stopTaskWebServer(){
+  vTaskDelete(taskWebHandle);
+}
 
 
 
@@ -1061,7 +1249,7 @@ void taskClock(void * parameter)
   isClockReady = false;
   while (!isWiFiReady)
   {
-    Serial.println("Task clock waiting for wifi...");
+    logln("Task clock waiting for wifi...");
     delay(5000);
   }
   
@@ -1069,27 +1257,27 @@ void taskClock(void * parameter)
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   struct tm timeinfo;
   while(!getLocalTime(&timeinfo)){
-    Serial.println("Clock : Failed to obtain time");
+    logln("Clock : Failed to obtain time");
     delay(2000);
   }
 
   Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-  // Serial.print("Day of week: ");
-  // Serial.println(&timeinfo, "%A");
-  // Serial.print("Month: ");
-  // Serial.println(&timeinfo, "%B");
-  // Serial.print("Day of Month: ");
-  // Serial.println(&timeinfo, "%d");
-  // Serial.print("Year: ");
-  // Serial.println(&timeinfo, "%Y");
-  // Serial.print("Hour: ");
-  // Serial.println(&timeinfo, "%H");
-  // Serial.print("Hour (12 hour format): ");
-  // Serial.println(&timeinfo, "%I");
-  // Serial.print("Minute: ");
-  // Serial.println(&timeinfo, "%M");
-  // Serial.print("Second: ");
-  // Serial.println(&timeinfo, "%S");
+  // log("Day of week: ");
+  // logln(&timeinfo, "%A");
+  // log("Month: ");
+  // logln(&timeinfo, "%B");
+  // log("Day of Month: ");
+  // logln(&timeinfo, "%d");
+  // log("Year: ");
+  // logln(&timeinfo, "%Y");
+  // log("Hour: ");
+  // logln(&timeinfo, "%H");
+  // log("Hour (12 hour format): ");
+  // logln(&timeinfo, "%I");
+  // log("Minute: ");
+  // logln(&timeinfo, "%M");
+  // log("Second: ");
+  // logln(&timeinfo, "%S");
 
   // strftime(timeDay,3, "%d", &timeinfo);
   // strftime(timeMonth,10, "%B", &timeinfo);
@@ -1103,8 +1291,7 @@ void taskClock(void * parameter)
   s = timeinfo.tm_sec;
 
 
-  Serial.print("Clock stack size : ");
-  Serial.println(uxTaskGetStackHighWaterMark(NULL));
+  logf("Clock stack size : %d",uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     s = s + 1;
@@ -1137,15 +1324,15 @@ void taskClock(void * parameter)
     }
 
 
-    // Serial.print("Time : ");
-    // Serial.print(timeinfo.tm_hour);
-    // Serial.print(":");
-    // Serial.print(m);
-    // Serial.print(":");
-    // Serial.println(s);
+    // log("Time : ");
+    // log(timeinfo.tm_hour);
+    // log(":");
+    // log(m);
+    // log(":");
+    // logln(s);
     sprintf_P(str_clock_full, (PGM_P)F("%02d:%02d:%02d"), h24, m, s);
     isClockReady = true;
-    //Serial.println(str_clock);
+    //logln(str_clock);
   }
 }
 
@@ -1164,7 +1351,7 @@ void taskDate(void * parameter)
   {
     while (!isWiFiReady)
     {
-      Serial.println("Task date waiting for wifi...");
+      logln("Task date waiting for wifi...");
       delay(5000);
     }
   
@@ -1173,7 +1360,7 @@ void taskDate(void * parameter)
       configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
       struct tm timeinfo;
       while(!getLocalTime(&timeinfo)){
-        Serial.println("Date : Failed to obtain time");
+        logln("Date : Failed to obtain time");
         delay(2000);
       }
       
@@ -1187,7 +1374,7 @@ void taskDate(void * parameter)
       //get hijri date
       char link[140] = {'\0'};
       sprintf_P(link, (PGM_P)F("https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=%04d&the_m=%02d&the_d=%02d&the_conv=ctoh&lg=1"), year, month+1, day);
-      Serial.println(link);
+      logln(link);
 
       WiFiClientSecure client;
       HTTPClient http;
@@ -1198,11 +1385,9 @@ void taskDate(void * parameter)
       int httpResponseCode = http.GET();
 
       if (httpResponseCode>0) {
-        Serial.print("Date HTTP Response code: ");
-        Serial.println(httpResponseCode);
+        logf("Date HTTP Response code: %d",httpResponseCode);
       } else {
-        Serial.print("Date Error code: ");
-        Serial.println(httpResponseCode);
+        logf("Date Error code: %d",httpResponseCode);
       }
 
       String jsonData = http.getString();
@@ -1214,8 +1399,8 @@ void taskDate(void * parameter)
       DeserializationError error = deserializeJson(doc, jsonData);
 
       if (error) {
-        Serial.print(F("Date deserializeJson() failed: "));
-        Serial.println(error.f_str());
+        log("Date deserializeJson() failed: ");
+        logln(reinterpret_cast<const char *>(error.f_str()));
         delay(20000);
         isDateReady = false;
         xSemaphoreGive(mutex_con); 
@@ -1254,8 +1439,7 @@ void taskDate(void * parameter)
         setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
       }
 
-      Serial.print("Date stack size : ");
-      Serial.println(uxTaskGetStackHighWaterMark(NULL));
+      logf("Date stack size : %d", uxTaskGetStackHighWaterMark(NULL));
     }
     xSemaphoreGive(mutex_con); 
     delayMSUntilAtTime(1,0,0);
@@ -1269,7 +1453,7 @@ void taskDate(void * parameter)
 void taskJadwalSholat(void * parameter){
   for(;;){
     if(!isDateReady){
-      Serial.println("Task JWS waiting for date...");
+      logln("Task JWS waiting for date...");
       delay(3000);
       continue;
     }
@@ -1277,7 +1461,7 @@ void taskJadwalSholat(void * parameter){
     { 
       char link[100] = {'\0'};
       sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%02d/%02d/%02d"), year, month+1, day);
-      Serial.println(link);
+      logln(link);
       
       WiFiClientSecure client;
       HTTPClient http;
@@ -1288,12 +1472,10 @@ void taskJadwalSholat(void * parameter){
       int httpResponseCode = http.GET();
       
       if (httpResponseCode>0) {
-        Serial.print("JWS HTTP Response code: ");
-        Serial.println(httpResponseCode);
+        logf("JWS HTTP Response code: %d",httpResponseCode);
       }
       else {
-        Serial.print("JWS Error code: ");
-        Serial.println(httpResponseCode);
+        logf("JWS Error code: %d",httpResponseCode);
       }
 
       String jsonData = http.getString();
@@ -1305,8 +1487,8 @@ void taskJadwalSholat(void * parameter){
       DeserializationError error = deserializeJson(doc, jsonData);
 
       if (error) {
-        Serial.print(F("JWS deserializeJson() failed: "));
-        Serial.println(error.f_str());
+        log("JWS deserializeJson() failed: ");
+        logln(reinterpret_cast<const char *>(error.f_str()));
         delay(20000);
         isJWSReady = false;
         xSemaphoreGive(mutex_con); 
@@ -1332,28 +1514,27 @@ void taskJadwalSholat(void * parameter){
       sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), data_jadwal["maghrib"].as<const char*>());
       sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), data_jadwal["isya"].as<const char*>());
       
-      Serial.print("Subuh : ");
-      Serial.println(data_jadwal_subuh);
-      Serial.print("Syuruk : ");
-      Serial.println(data_jadwal_syuruk);
-      Serial.print("Dhuha : ");
-      Serial.println(data_jadwal_dhuha);
-      Serial.print("Dzuhur : ");
-      Serial.println(data_jadwal_dzuhur);
-      Serial.print("Ashar : ");
-      Serial.println(data_jadwal_ashar);
-      Serial.print("Magrib : ");
-      Serial.println(data_jadwal_maghrib);   
-      Serial.print("Isya : ");
-      Serial.println(data_jadwal_isya); 
+      log("Subuh : ");
+      logln(data_jadwal_subuh);
+      log("Syuruk : ");
+      logln(data_jadwal_syuruk);
+      log("Dhuha : ");
+      logln(data_jadwal_dhuha);
+      log("Dzuhur : ");
+      logln(data_jadwal_dzuhur);
+      log("Ashar : ");
+      logln(data_jadwal_ashar);
+      log("Magrib : ");
+      logln(data_jadwal_maghrib);   
+      log("Isya : ");
+      logln(data_jadwal_isya); 
 
       doc.clear();
     }
     xSemaphoreGive(mutex_con);
     isJWSReady = true;
 
-    Serial.print("JWS stack size : ");
-    Serial.println(uxTaskGetStackHighWaterMark(NULL));
+    logf("JWS stack size : %d",uxTaskGetStackHighWaterMark(NULL));
     delayMSUntilAtTime(1,12,0);
   }
 }
@@ -1368,8 +1549,8 @@ void updateHijriForFirstHalfNight(){
     //it's time to update hijri date
     if(hijri_day+1 <= 29){
       sprintf_P(str_hijri_date, (PGM_P)F("%d%s"), hijri_day+1,(hijri_day >= 10 ? str_hijri_date+2 : str_hijri_date+1));     
-      Serial.print("New Hijri Date :");
-      Serial.println(str_hijri_date);
+      log("New Hijri Date :");
+      logln(str_hijri_date);
       sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
     }
 }
@@ -1377,7 +1558,7 @@ void updateHijriForFirstHalfNight(){
 void taskCountDownJWS(void * parameter){
   for(;;){
     if(!isJWSReady){
-      Serial.println("Task countdown-jws waiting for jws...");
+      logln("Task countdown-jws waiting for jws...");
       delay(3000);
       continue;
     }
@@ -1452,20 +1633,13 @@ void taskCountDownJWS(void * parameter){
     }
     seconds = leftSeconds;
 
-    Serial.print("Counter Countdown for ");
-    Serial.print(type_jws);
-    Serial.print(" : ");
-    Serial.print(counter);
-    Serial.print(" ==> ");
-    Serial.print(hours);
-    Serial.print(" - ");
-    Serial.print(minutes);
-    Serial.print(" - ");
-    Serial.println(seconds);
+    log("Counter Countdown for ");
+    log(type_jws);
+    logf(" : %d",counter);
+    logf(" ==> %d - %d - %d",hours,minutes,seconds);
 
 
-    Serial.print("Countdown JWS stack size : ");
-    Serial.println(uxTaskGetStackHighWaterMark(NULL));
+    logf("Countdown JWS stack size : %d",uxTaskGetStackHighWaterMark(NULL));
     while(counter >= 0){
       if(seconds==-1){
         seconds=59;
@@ -1477,10 +1651,10 @@ void taskCountDownJWS(void * parameter){
       }
       //display
       sprintf_P(count_down_jws, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-      //Serial.print("String Countdown : ");
-      //Serial.print(type_jws);
-      //Serial.print(" : ");
-      //Serial.println(count_down_jws);
+      //log("String Countdown : ");
+      //log(type_jws);
+      //log(" : ");
+      //logln(count_down_jws);
       seconds--;
       counter--;
       delay(1000);
@@ -1489,7 +1663,7 @@ void taskCountDownJWS(void * parameter){
     //show alert
     char count_sholat_alert[30] = {0};
     sprintf_P(count_sholat_alert, (PGM_P)F("Sudah masuk waktu %s"), type_jws);
-    setupDMDAtNowForIteration(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_COUNTUP,getAllocatedString(count_sholat_alert),true,"",false,System5x7,1000,ALERT_COUNTUP_SHOLAT,1);
+    setupDMDAtNowForIteration(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_COUNTUP,getAllocatedString(count_sholat_alert),true,"",false,System5x7,1000,ALERT_COUNTUP_SHOLAT,5);
     resetDMDLoopIndex();
     delay(5000);
   }
@@ -1516,17 +1690,17 @@ void taskFirebase(void * parameter){
 
   Firebase.enableClassicRequest(fbdo, true);
   fbdo.setResponseSize(8192); //minimum size is 4096 bytes
-  Serial.println("------------------------------------");
-  Serial.println("Firebase Sign up new user...");
+  logln("------------------------------------");
+  logln("Firebase Sign up new user...");
   // Sign in to firebase Anonymously
   if (Firebase.signUp(&config, &auth, "", "")){
-    Serial.println("Firebase signup Success");
+    logln("Firebase signup Success");
     isAuthenticated = true;
     fuid = auth.token.uid.c_str();
   }
   else
   {
-    Serial.printf("Firebase signup Failed, %s\n", config.signer.signupError.message.c_str());
+    logf("Firebase signup Failed, %s\n", config.signer.signupError.message.c_str());
     isAuthenticated = false;
   }
 
@@ -1545,19 +1719,17 @@ void taskFirebase(void * parameter){
   xSemaphoreGive(mutex_con);
 
   //Firebase.reconnectWiFi(true);
-  Serial.print("Firebase stack size : ");
-  Serial.println(uxTaskGetStackHighWaterMark(NULL));
+  logf("Firebase stack size : %d",uxTaskGetStackHighWaterMark(NULL));
   //int test = 0;
   for(;;){
     xSemaphoreTake(mutex_con, portMAX_DELAY); 
     {
       // Check that 10 seconds has elapsed before, device is authenticated and the firebase service is ready.
       boolean isFirebaseReady = Firebase.ready();
-      Serial.print("Firebase ready or not ? ");
-      Serial.println(isFirebaseReady);
+      logf("Firebase ready or not ? %d",isFirebaseReady);
       if (isAuthenticated && isFirebaseReady){
-          Serial.println("------------------------------------");
-          Serial.println("Firebase get data...");
+          logln("------------------------------------");
+          logln("Firebase get data...");
 
           if(Firebase.getArray(fbdo, nasehatListPath)){
             FirebaseJsonArray fbja = fbdo.jsonArray();
@@ -1567,23 +1739,18 @@ void taskFirebase(void * parameter){
               fbja.get(result, i);
 
               //Print its value
-              Serial.print("Array index: ");
-              Serial.print(i);
-              Serial.print(", type: ");
-              Serial.print(result.type);
-              Serial.print(", value: ");
-              Serial.println(result.to<String>());
+              logf("Array index: %d, type: %d, value: %s",i,result.type,result.to<String>().c_str());
 
               char * info = getAllocatedString(result.to<String>());
               setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,info,true,"",false,Arial_Black_16,1000,10000,msDistanceFromNowToTime(23, 59, 0));
               setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
-              setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_COUNTDOWN,type_jws,false,count_down_jws,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
+              setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,type_jws,false,count_down_jws,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
             }
-            Serial.println("Firebase get process...");
+            logln("Firebase get process...");
           }
           //Firebase.setInt(fbdo, "/app/test", test);
           //test++;
-          Serial.println("Firebase done data...");
+          logln("Firebase done data...");
       }
     }
     xSemaphoreGive(mutex_con);
@@ -1596,18 +1763,17 @@ void taskFirebase(void * parameter){
 //=========================================================================
 void taskButtonTouch(void * parameter){
   
-  Serial.print("Button Touch stack size : ");
-  Serial.println(uxTaskGetStackHighWaterMark(NULL));
+  logf("Button Touch stack size : %d",uxTaskGetStackHighWaterMark(NULL));
   for(;;){
     uint16_t touchValue = touchRead(33);
     bool isTouched = touchValue < 20;
-    //Serial.print("Touch Value : ");
-    //Serial.println(touchValue);
+    //log("Touch Value : ");
+    //logln(touchValue);
     if(isTouched){
       //remove ssid & password in preferences setting
       //preferences.remove("ssid");
       //preferences.remove("password");
-      Serial.println("Restarting after remove wifi credential");
+      logln("Restarting after remove wifi credential");
       //delay(3000);
       //ESP.restart();
     }
@@ -1624,8 +1790,8 @@ void listAllFiles(){
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
   while(file){
-      Serial.print("FILE: ");
-      Serial.println(file.name());
+      log("FILE: ");
+      logln(file.name());
       file = root.openNextFile();
   }
 }
@@ -1636,17 +1802,18 @@ void listAllFiles(){
 void setup()
 {
   pinMode(built_in_led, OUTPUT);
+
   Serial.begin(115200);
   delay(1000); // give me time to bring up serial monitor
 
   mutex_con = xSemaphoreCreateMutex(); 
   if (mutex_con == NULL) { 
-    Serial.println("Mutex con can not be created"); 
+    logln("Mutex con can not be created"); 
   }
 
   mutex_dmd = xSemaphoreCreateMutex(); 
   if (mutex_dmd == NULL) { 
-    Serial.println("Mutex dmd can not be created"); 
+    logln("Mutex dmd can not be created"); 
   } 
 
  
@@ -1657,7 +1824,7 @@ void setup()
   password = preferences.getString("password","");
 
   while(!SPIFFS.begin(true)){
-    Serial.println("An Error has occurred while mounting SPIFFS");
+    logln("An Error has occurred while mounting SPIFFS");
     return;
   }
   isSPIFFSReady = true;
@@ -1679,9 +1846,16 @@ void setup()
     WiFi.softAP("Speaker Murottal AP", "qwerty654321");
     if (MDNS.begin("speaker-murottal"))
     {
-      Serial.println("speaker-murottal.local is available");
+      logln("speaker-murottal.local is available");
     }
     startTaskToggleLED();
+    delay(5000);
+    
+    startTaskWebServer();
+    delay(5000);
+
+    startTaskWebSocketServer();
+    delay(5000);
   } else {
     xTaskCreatePinnedToCore(
         taskKeepWiFiAlive,  // Function that should be called
@@ -1692,8 +1866,14 @@ void setup()
         &taskKeepWiFiHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE
     );
-
     delay(5000);
+
+    startTaskWebServer();
+    delay(5000);
+
+    startTaskWebSocketServer();
+    delay(5000);
+
     xTaskCreatePinnedToCore(
         taskClock,  // Function that should be called
         "Clock",   // Name of the task (for debugging)
@@ -1702,8 +1882,8 @@ void setup()
         1,              // Task priority
         &taskClockHandle, // Task handle
         0);
-
     delay(5000);
+
     xTaskCreatePinnedToCore(
         taskDate,  // Function that should be called
         "Date",   // Name of the task (for debugging)
@@ -1712,8 +1892,8 @@ void setup()
         1,              // Task priority
         &taskDateHandle, // Task handle
         0);
-
     delay(5000);
+
     xTaskCreatePinnedToCore(
         taskJadwalSholat,  // Function that should be called
         "Jadwal Sholat",   // Name of the task (for debugging)
@@ -1722,8 +1902,8 @@ void setup()
         1,              // Task priority
         &taskJWSHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
-
     delay(5000);
+
     xTaskCreatePinnedToCore(
         taskCountDownJWS,  // Function that should be called
         "Countdown Jadwal Sholat",   // Name of the task (for debugging)
@@ -1732,8 +1912,8 @@ void setup()
         1,              // Task priority
         &taskCountdownJWSHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
-
     delay(5000);
+
     xTaskCreatePinnedToCore(
         taskDMD,        // Function that should be called
         "Display DMD",  // Name of the task (for debugging)
@@ -1742,8 +1922,8 @@ void setup()
         1,              // Task priority
         &taskDMDHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
-
     delay(6000);
+
     xTaskCreatePinnedToCore(
         taskFirebase,        // Function that should be called
         "Firebase",  // Name of the task (for debugging)
@@ -1752,17 +1932,8 @@ void setup()
         1,              // Task priority
         &taskFirebaseHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
+      delay(5000);
   }
-
-  delay(5000);
-  xTaskCreatePinnedToCore(
-      taskWebServer,  // Function that should be called
-      "Web Server",   // Name of the task (for debugging)
-      5000,           // Stack size (bytes)
-      NULL,           // Parameter to pass
-      1,              // Task priority
-      &taskWebHandle, // Task handle
-      CONFIG_ARDUINO_RUNNING_CORE);
 
   //vTaskDelete(NULL);
 }

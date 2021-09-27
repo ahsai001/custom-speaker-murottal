@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Log Serial</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        background-color: #e6d8d5;
+        text-align: center;
+      }
+      p {
+        background-color: #a59999;
+        color: #020000;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Received message: </h1>
+    <p id="message"></p>
+    <button type="button" id="btn_on">
+      <h1>ON</h1></button
+    ><button type="button" id="btn_off">
+      <h1>OFF</h1>
+    </button>
+  </body>
+  <script>
+    var Socket;
+    document
+      .getElementById("btn_on")
+      .addEventListener("click", button_on_pressed);
+    document
+      .getElementById("btn_off")
+      .addEventListener("click", button_off_pressed);
+    function init() {
+      Socket = new WebSocket("ws://" + window.location.hostname + ":81/");
+      Socket.onmessage = function (event) {
+        processCommand(event);
+      };
+    }
+    function processCommand(event) {
+      var obj = JSON.parse(event.data);
+      document.getElementById("message").innerHTML = document.getElementById("message").innerHTML +"<br>"+obj.log;
+      console.log(obj.log);
+    }
+    function button_on_pressed() {
+      Socket.send("on");
+    }
+    function button_off_pressed() {
+      Socket.send("off");
+    }
+    window.onload = function (event) {
+      init();
+    };
+  </script>
+</html>
