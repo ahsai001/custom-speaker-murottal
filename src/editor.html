@@ -7,23 +7,117 @@
     <style>
       body {
         background-color: #e6d8d5;
-        text-align: center;
       }
-      a {
-        display: block;
-        line-height: 30px;
+      p {
+        background-color: #a59999;
+        color: #020000;
+      }
+      /* The switch - the box around the slider */
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+        height: 34px;
+      }
+
+      /* Hide default HTML checkbox */
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      /* The slider */
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        -webkit-transition: 0.4s;
+        transition: 0.4s;
+      }
+
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 26px;
+        width: 26px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        -webkit-transition: 0.4s;
+        transition: 0.4s;
+      }
+
+      input:checked + .slider {
+        background-color: #2196f3;
+      }
+
+      input:focus + .slider {
+        box-shadow: 0 0 1px #2196f3;
+      }
+
+      input:checked + .slider:before {
+        -webkit-transform: translateX(26px);
+        -ms-transform: translateX(26px);
+        transform: translateX(26px);
+      }
+
+      /* Rounded sliders */
+      .slider.round {
+        border-radius: 34px;
+      }
+
+      .slider.round:before {
+        border-radius: 50%;
       }
     </style>
   </head>
   <body>
-    <h1>Selamat datang sahabat pengguna Speaker Murottal by AhsaiLabs</h1>
-    <a href="/wifi">Wifi Manager</a>
-    <a href="/setting">Settings</a>
-    <a href="/logs">Show Logs</a>
-    <a href="/restart">Restart</a>
+    <h1 id="heading">Received Logs: <small>active</small></h1>
+    <p id="message"></p>
+    <button type="button" id="btn_reset">reset</button>
+    <br>
+    <label class="switch">
+      <input id="cb_on" type="checkbox" onclick="handleClick(this);" checked/>
+      <span class="slider round"></span>
+    </label>
   </body>
   <script>
+    var Socket;
+    var heading = document.getElementById("heading");
+    var p_message = document.getElementById("message");
+    var btn_reset = document.getElementById("btn_reset");
+    var cb_on = document.getElementById("cb_on");
+    btn_reset.addEventListener("click", button_reset_pressed);
     function init() {
+      Socket = new WebSocket("ws://" + window.location.hostname + ":81/");
+      Socket.onmessage = function (event) {
+        processCommand(event);
+      };
+    }
+
+    function handleClick(cb) {
+      console.log("Clicked, new value = " + cb.checked);
+      if(cb.checked){
+        heading.innerHTML = "Received Logs: <small>active</small>";
+      } else {
+        heading.innerHTML = "Received Logs: <small>inactive</small>";
+      }
+    }
+    function processCommand(event) {
+      if (cb_on.checked) {
+        var log = event.data;
+        p_message.innerHTML = p_message.innerHTML + log;
+        console.log(log);
+      }
+    }
+    function button_reset_pressed() {
+      //Socket.send("on");
+      p_message.innerHTML = "...";
     }
     window.onload = function (event) {
       init();

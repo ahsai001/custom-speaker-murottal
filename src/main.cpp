@@ -1146,12 +1146,12 @@ const char index_html_ws[] PROGMEM = R"rawliteral(
     </style>
   </head>
   <body>
-    <h1 id="heading">Received Logs:</h1>
+    <h1 id="heading">Received Logs: <small>active</small></h1>
     <p id="message"></p>
     <button type="button" id="btn_reset">reset</button>
     <br>
     <label class="switch">
-      <input id="cb_on" type="checkbox" onclick="handleClick(this);" />
+      <input id="cb_on" type="checkbox" onclick="handleClick(this);" checked/>
       <span class="slider round"></span>
     </label>
   </body>
