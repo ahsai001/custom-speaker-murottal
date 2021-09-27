@@ -1296,9 +1296,12 @@ void taskWebServer(void *parameter)
             if (server.hasArg("ssid")&& server.hasArg("password")) {
               String ssid = server.arg("ssid");
               String password = server.arg("password");
+              stopTaskDMD();
+              delay(1000);
               preferences.putString("ssid", ssid);
               preferences.putString("password", password);
               server.send(200, "text/plain", "setting wifi berhasil, silakan restart");
+              startTaskDMD();
               //ESP.restart();
             } else {
               server.send(200, "text/html", index_html_wifi);
