@@ -887,7 +887,9 @@ void startTaskDMD(){
 }
 
 void stopTaskDMD(){
-  vTaskDelete(taskDMDHandle);
+  if(taskDMDHandle != NULL){
+    vTaskDelete(taskDMDHandle);
+  }
 }
 
 
@@ -925,7 +927,9 @@ void startTaskToggleLED()
 
 void stopTaskToggleLED()
 {
-  vTaskDelete(taskLEDHandle);
+  if(taskLEDHandle != NULL){
+    vTaskDelete(taskLEDHandle);
+  }
   digitalWrite(built_in_led, HIGH);
 }
 
@@ -1342,7 +1346,9 @@ void startTaskWebSocketServer(){
 }
 
 void stopTaskWebSocketServer(){
-  vTaskDelete(taskWebSocketHandle);
+  if(taskWebSocketHandle != NULL){
+    vTaskDelete(taskWebSocketHandle);
+  }
 }
 
 void startTaskWebServer(){
@@ -1357,7 +1363,9 @@ void startTaskWebServer(){
 }
 
 void stopTaskWebServer(){
-  vTaskDelete(taskWebHandle);
+  if(taskWebHandle != NULL){
+    vTaskDelete(taskWebHandle);
+  }
 }
 
 
