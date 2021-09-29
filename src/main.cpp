@@ -1735,9 +1735,9 @@ void taskJadwalSholat(void * parameter){
     logf("JWS stack size : %d",uxTaskGetStackHighWaterMark(NULL));
 
     if(isFetchSuccess){
-      delayMSUntilAtTime(0,30,0);
       stopTaskCountdownJWS();
       startTaskCountdownJWS();
+      delayMSUntilAtTime(0,30,0);
     } else {
       delay(180000); //3 minutes
     }
