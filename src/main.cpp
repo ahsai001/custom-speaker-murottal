@@ -54,18 +54,18 @@ volatile int m = 0; //minutes
 volatile int s = 0; //seconds
 char str_clock_full[9] = "--:--:--"; //used by dmd task
 char str_date[26] = "------, -- --------- ----"; //used by dmd task
-char str_hijri_date[30] = "1-- ------- ----- ----";
+char str_hijri_date[30] = "-- ------- ----- ----";
 char str_date_full[55] = "";
 // char timeDay[3];
 // char timeMonth[10];
 // char timeYear[5];
-volatile int day;
-volatile int month;
-volatile int year;
-volatile int weekday;
-volatile int hijri_day;
-volatile int hijri_month;
-volatile int hijri_year;
+volatile int day = -1;
+volatile int month = -1;
+volatile int year = -1;
+volatile int weekday = -1;
+volatile int hijri_day = -1;
+volatile int hijri_month = -1;
+volatile int hijri_year = -1;
 
 
 volatile bool isWiFiReady = false;
@@ -1176,6 +1176,7 @@ const char index_html_ws[] PROGMEM = R"rawliteral(
         heading.innerHTML = "Received Logs: <small>inactive</small>";
       }
     }
+
     function processCommand(event) {
       if (cb_on.checked) {
         var log = event.data;
@@ -1183,9 +1184,10 @@ const char index_html_ws[] PROGMEM = R"rawliteral(
         console.log(log);
       }
     }
+
     function button_reset_pressed() {
       //Socket.send("on");
-      p_message.innerHTML = "...";
+      p_message.innerHTML = "";
     }
     window.onload = function (event) {
       init();
@@ -1232,9 +1234,7 @@ const char index_html_root[] PROGMEM = R"rawliteral(
 WebServer server(80);
 void handleWebRoot()
 {
-  //digitalWrite(built_in_led, 0);
   server.send(200, "text/html", index_html_root);
-  //digitalWrite(built_in_led, 1);
 }
 
 void handleWebNotFound()
@@ -1417,8 +1417,8 @@ void taskClock(void * parameter)
   m = timeinfo.tm_min;
   s = timeinfo.tm_sec;
 
-
   logf("Clock stack size : %d",uxTaskGetStackHighWaterMark(NULL));
+
   for (;;)
   {
     s = s + 1;
@@ -1468,111 +1468,187 @@ const char * getJsonData(const char * link){
 
 }
 
+bool isKabisat(int year){
+  bool isKabisat = false;
+  if(year % 4 == 0){
+      if(year % 100 == 0){
+        if(year % 400 == 0){
+          isKabisat = true;
+        } else {
+          isKabisat = false;
+        }
+      } else {
+        isKabisat = true;
+      }
+  } else {
+    isKabisat = false;
+  }
+  return isKabisat;
+}
+
 //===========================================================================
-//==================================   Task Date & Hijri Date  ==============
+//==================================   Task Masehi Date & Hijri Date  =======
 //===========================================================================
 void taskDate(void * parameter)
 {
   isDateReady = false;
   for (;;)
   {
-    while (!isWiFiReady)
-    {
-      logln("Task date waiting for wifi...");
-      delay(5000);
-    }
-  
-    xSemaphoreTake(mutex_con, portMAX_DELAY); 
-    {
-      configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-      struct tm timeinfo;
-      while(!getLocalTime(&timeinfo)){
-        logln("Date : Failed to obtain time");
-        delay(2000);
-      }
-      
-      Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+    xSemaphoreTake(mutex_con, portMAX_DELAY);
+    { 
+      bool isMasehiOfflineMode = false;
+      bool isHijriOfflineMode = false;
+      if(isWiFiReady)
+      {
+        //ONLINE MODE
+        //get masehi date
+        configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+        struct tm timeinfo;
+        if(!getLocalTime(&timeinfo)){
+          logln("Date : Failed to obtain time");
+          isMasehiOfflineMode = true;
+          isHijriOfflineMode = true;
+        } else {
+          Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
 
-      day = timeinfo.tm_mday;
-      month = timeinfo.tm_mon; //0-11 since januari
-      year = timeinfo.tm_year+1900;
-      weekday = timeinfo.tm_wday;//0-6 since sunday
+          day = timeinfo.tm_mday;
+          month = timeinfo.tm_mon; //0-11 since januari
+          year = timeinfo.tm_year+1900;
+          weekday = timeinfo.tm_wday;//0-6 since sunday
 
-      //get hijri date
-      char link[140] = {'\0'};
-      sprintf_P(link, (PGM_P)F("https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=%04d&the_m=%02d&the_d=%02d&the_conv=ctoh&lg=1"), year, month+1, day);
-      logln(link);
+          //get hijri date
+          char link[140] = {'\0'};
+          sprintf_P(link, (PGM_P)F("https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=%04d&the_m=%02d&the_d=%02d&the_conv=ctoh&lg=1"), year, month+1, day);
+          logln(link);
 
-      WiFiClientSecure client;
-      HTTPClient http;
-      client.setInsecure();
+          WiFiClientSecure client;
+          HTTPClient http;
+          client.setInsecure();
 
-      // Your Domain name with URL path or IP address with path
-      http.begin(client, link);
-      int httpResponseCode = http.GET();
+          // Your Domain name with URL path or IP address with path
+          http.begin(client, link);
+          int httpResponseCode = http.GET();
 
-      if (httpResponseCode>0) {
-        logf("Date HTTP Response code: %d",httpResponseCode);
-      } else {
-        logf("Date Error code: %d",httpResponseCode);
-      }
+          if (httpResponseCode==200) {
+            logf("Date HTTP Response code: %d",httpResponseCode);
+            String jsonData = http.getString();
 
-      String jsonData = http.getString();
+            DynamicJsonDocument doc(512);
+            DeserializationError error = deserializeJson(doc, jsonData);
 
-      // Free resources
-      http.end();
+            if (error) {
+              log("Date deserializeJson() failed: ");
+              logln(reinterpret_cast<const char *>(error.f_str()));
+              isHijriOfflineMode = true;
+            } else {
+              const char * hijri_date = doc["tanggal_hijriyah"];
+              sprintf_P(str_hijri_date, (PGM_P)F("%s"), hijri_date);
+              hijri_day = doc["hijri_tanggal"];
+              hijri_month = doc["hijri_bulan"];
+              hijri_year = doc["hijri_tahun"];
+            }
+            
+            doc.clear();
+          } else {
+            logf("Date Error code: %d",httpResponseCode);
+            isHijriOfflineMode = true;
+          }
 
-      DynamicJsonDocument doc(512);
-      DeserializationError error = deserializeJson(doc, jsonData);
-
-      if (error) {
-        log("Date deserializeJson() failed: ");
-        logln(reinterpret_cast<const char *>(error.f_str()));
-        delay(20000);
-        isDateReady = false;
-        xSemaphoreGive(mutex_con); 
-        continue;
-      }
-
-      const char * hijri_date = doc["tanggal_hijriyah"];
-      sprintf_P(str_hijri_date, (PGM_P)F("%s"), hijri_date);
-      hijri_day = doc["hijri_tanggal"];
-      hijri_month = doc["hijri_bulan"];
-      hijri_year = doc["hijri_tahun"];
-
-
-      String day_names[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jum'at", "Sabtu"};
-      String month_names[] = {"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"};
-
-      memset(str_date,'\0',sizeof(char)*26);
-      sprintf_P(str_date, (PGM_P)F("%s, %02d %s %02d"), day_names[weekday].c_str(), day, month_names[month].c_str(),year);
-      
-      sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
-
-      doc.clear();
-      isDateReady = true;
-
-      if(weekday == 0){
-        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false, System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
-      } else if(weekday == 3){
-        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
-      } else if(weekday == 4){
-        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,0,"18:30:00",1,"17:30:00");
-      } else if(weekday == 5){
-        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,0,"00:01:00",0,"17:30:00");
+          // Free resources
+          http.end();
+        }
       }
 
-      if(hijri_day == 12 || hijri_day == 13 || hijri_day == 14){
-        setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
+      if(day>-1 && hijri_day>-1){
+        isDateReady = true;
+      }
+
+      if(isDateReady){
+        if(isMasehiOfflineMode){
+          //MASEHI OFFLINE MODE
+          //31: 0,2,4,6,7,9,11
+          //30: 3,5,8,10,12
+          //28/29: 1
+          day++;
+          if(day>=29){
+            if(month==1){
+              if(isKabisat(year)){
+                if(day>29){
+                  day = 1;
+                  month++;
+                }
+              } else {
+                if(day>28){
+                  day = 1;
+                  month++;
+                }
+              }
+            } else if(month==3 || month==5 || month==8 || month==10 || month==12){
+              if(day>30){
+                day = 1;
+                month++;
+              }
+            } else if(month==0 || month==2 || month==4 || month==6 || month==7 || month==9 || month==11){
+              if(day>31){
+                day = 1;
+                month++;
+              }
+            }
+          }
+
+          if(month>11){
+            month = 0;
+            year++;
+          }
+
+          weekday++;
+          if(weekday>=7){
+            weekday=0;
+          }   
+        }
+
+        if(isHijriOfflineMode){
+          //HIJRI OFFLINE MODE
+          //dont adjust here
+        }
+
+        //calculation
+        String day_names[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jum'at", "Sabtu"};
+        String month_names[] = {"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"};
+
+        memset(str_date,'\0',sizeof(char)*26);
+        sprintf_P(str_date, (PGM_P)F("%s, %02d %s %02d"), day_names[weekday].c_str(), day, month_names[month].c_str(),year);
+        sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
+
+        if(weekday == 0){
+          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false, System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
+        } else if(weekday == 3){
+          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
+        } else if(weekday == 4){
+          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,0,"18:30:00",1,"17:30:00");
+        } else if(weekday == 5){
+          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,0,"00:01:00",0,"17:30:00");
+        }
+
+        if(hijri_day == 12 || hijri_day == 13 || hijri_day == 14){
+          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
+        }
       }
 
       logf("Date stack size : %d", uxTaskGetStackHighWaterMark(NULL));
     }
-    xSemaphoreGive(mutex_con); 
-    delayMSUntilAtTime(1,0,0);
+    xSemaphoreGive(mutex_con);
+    if(!isDateReady){
+      logln("Task date waiting for wifi...");
+      delay(180000); //3 minutes
+    } else {
+      delayMSUntilAtTime(0,1,0);
+    }
   }
 }
 
+void startTaskCountdownJWS();
+void stopTaskCountdownJWS();
 
 //=========================================================================
 //==================================  Task Jadwal Sholat =================
@@ -1581,9 +1657,10 @@ void taskJadwalSholat(void * parameter){
   for(;;){
     if(!isDateReady){
       logln("Task JWS waiting for date...");
-      delay(3000);
+      delay(10000);
       continue;
     }
+    bool isFetchSuccess = false;
     xSemaphoreTake(mutex_con, portMAX_DELAY);
     { 
       char link[100] = {'\0'};
@@ -1600,72 +1677,72 @@ void taskJadwalSholat(void * parameter){
       
       if (httpResponseCode>0) {
         logf("JWS HTTP Response code: %d",httpResponseCode);
-      }
-      else {
+        String jsonData = http.getString();
+    
+        DynamicJsonDocument doc(768);
+        DeserializationError error = deserializeJson(doc, jsonData);
+
+        if (error) {
+          log("JWS deserializeJson() failed: ");
+          logln(reinterpret_cast<const char *>(error.f_str()));
+          delay(20000);
+        } else {
+          JsonObject data_jadwal = doc["data"]["jadwal"];
+          // for testing only
+          // sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), "02:37");// "04:37"
+          // sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), "02:42");
+          // sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), "03:30");
+          // sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), "04:30");
+          // sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), "05:50");
+          // sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), "06:39");
+          // sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), "07:58");
+
+          sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), data_jadwal["subuh"].as<const char*>());// "04:37"
+          sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), data_jadwal["terbit"].as<const char*>());// "04:37"
+          sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), data_jadwal["dhuha"].as<const char*>());// "04:37"
+          sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), data_jadwal["dzuhur"].as<const char*>());
+          sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), data_jadwal["ashar"].as<const char*>());
+          sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), data_jadwal["maghrib"].as<const char*>());
+          sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), data_jadwal["isya"].as<const char*>());
+
+          isJWSReady = true;
+          isFetchSuccess = true;
+          
+          log("Subuh : ");
+          logln(data_jadwal_subuh);
+          log("Syuruk : ");
+          logln(data_jadwal_syuruk);
+          log("Dhuha : ");
+          logln(data_jadwal_dhuha);
+          log("Dzuhur : ");
+          logln(data_jadwal_dzuhur);
+          log("Ashar : ");
+          logln(data_jadwal_ashar);
+          log("Magrib : ");
+          logln(data_jadwal_maghrib);   
+          log("Isya : ");
+          logln(data_jadwal_isya); 
+        }
+        doc.clear();
+      } else {
         logf("JWS Error code: %d",httpResponseCode);
       }
 
-      String jsonData = http.getString();
-
       // Free resources
       http.end();
-
-      DynamicJsonDocument doc(768);
-      DeserializationError error = deserializeJson(doc, jsonData);
-
-      if (error) {
-        log("JWS deserializeJson() failed: ");
-        logln(reinterpret_cast<const char *>(error.f_str()));
-        delay(20000);
-        isJWSReady = false;
-        xSemaphoreGive(mutex_con); 
-        continue;
-      }
-
-      JsonObject data_jadwal = doc["data"]["jadwal"];
-
-      // for testing only
-      // sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), "02:37");// "04:37"
-      // sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), "02:42");
-      // sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), "03:30");
-      // sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), "04:30");
-      // sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), "05:50");
-      // sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), "06:39");
-      // sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), "07:58");
-
-      sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), data_jadwal["subuh"].as<const char*>());// "04:37"
-      sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), data_jadwal["terbit"].as<const char*>());// "04:37"
-      sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), data_jadwal["dhuha"].as<const char*>());// "04:37"
-      sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), data_jadwal["dzuhur"].as<const char*>());
-      sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), data_jadwal["ashar"].as<const char*>());
-      sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), data_jadwal["maghrib"].as<const char*>());
-      sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), data_jadwal["isya"].as<const char*>());
-      
-      log("Subuh : ");
-      logln(data_jadwal_subuh);
-      log("Syuruk : ");
-      logln(data_jadwal_syuruk);
-      log("Dhuha : ");
-      logln(data_jadwal_dhuha);
-      log("Dzuhur : ");
-      logln(data_jadwal_dzuhur);
-      log("Ashar : ");
-      logln(data_jadwal_ashar);
-      log("Magrib : ");
-      logln(data_jadwal_maghrib);   
-      log("Isya : ");
-      logln(data_jadwal_isya); 
-
-      doc.clear();
     }
     xSemaphoreGive(mutex_con);
-    isJWSReady = true;
-
     logf("JWS stack size : %d",uxTaskGetStackHighWaterMark(NULL));
-    delayMSUntilAtTime(1,12,0);
+
+    if(isFetchSuccess){
+      delayMSUntilAtTime(0,30,0);
+      stopTaskCountdownJWS();
+      startTaskCountdownJWS();
+    } else {
+      delay(180000); //3 minutes
+    }
   }
 }
-
 
 
 #define ALERT_COUNTUP_SHOLAT 5*60*1000/*5 menit*/
@@ -1686,7 +1763,7 @@ void taskCountDownJWS(void * parameter){
   for(;;){
     if(!isJWSReady){
       logln("Task countdown-jws waiting for jws...");
-      delay(3000);
+      delay(10000);
       continue;
     }
     std::array<unsigned long,4> clock = getArrayOfTime(str_clock_full);
@@ -1790,12 +1867,28 @@ void taskCountDownJWS(void * parameter){
     //show alert
     char count_sholat_alert[30] = {0};
     sprintf_P(count_sholat_alert, (PGM_P)F("Sudah masuk waktu %s"), type_jws);
-    setupDMDAtNowForIteration(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_COUNTUP,getAllocatedString(count_sholat_alert),true,"",false,System5x7,1000,ALERT_COUNTUP_SHOLAT,5);
+    setupDMDAtNowForIteration(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,getAllocatedString(count_sholat_alert),true,str_clock_full,false,System5x7,1000,ALERT_COUNTUP_SHOLAT,5);
     resetDMDLoopIndex();
     delay(5000);
   }
 }
 
+void startTaskCountdownJWS(){
+  xTaskCreatePinnedToCore(
+        taskCountDownJWS,  // Function that should be called
+        "Countdown Jadwal Sholat",   // Name of the task (for debugging)
+        4500,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        1,              // Task priority
+        &taskCountdownJWSHandle, // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE);
+}
+
+void stopTaskCountdownJWS(){
+  if(taskCountdownJWSHandle != NULL){
+    vTaskDelete(taskCountdownJWSHandle);
+  }
+}
 
 //=========================================================================
 //==================================   Task Firebase Scheduler  ===========
@@ -2031,16 +2124,6 @@ void setup()
         NULL,           // Parameter to pass
         1,              // Task priority
         &taskJWSHandle, // Task handle
-        CONFIG_ARDUINO_RUNNING_CORE);
-    delay(5000);
-
-    xTaskCreatePinnedToCore(
-        taskCountDownJWS,  // Function that should be called
-        "Countdown Jadwal Sholat",   // Name of the task (for debugging)
-        4500,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority
-        &taskCountdownJWSHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
     delay(5000);
 
