@@ -1675,7 +1675,7 @@ void taskJadwalSholat(void * parameter){
       http.begin(client, link);
       int httpResponseCode = http.GET();
       
-      if (httpResponseCode>0) {
+      if (httpResponseCode==200) {
         logf("JWS HTTP Response code: %d",httpResponseCode);
         String jsonData = http.getString();
     
