@@ -74,6 +74,7 @@ volatile bool isDateReady = false;
 volatile bool isJWSReady = false;
 volatile bool isSPIFFSReady = false;
 volatile bool isWebSocketReady = false;
+volatile bool isFirebaseReady = false;
 
 const uint8_t built_in_led = 2;
 const uint8_t relay = 26;
@@ -315,7 +316,7 @@ std::array<unsigned long, 4>  getArrayOfTime(const char * time){
 //=========================================================================
 #define DISPLAYS_ACROSS 2
 #define DISPLAYS_DOWN 1
-#define DMD_DATA_SIZE 20
+#define DMD_DATA_SIZE 30
 #define DMD_DATA_FLASH_INDEX 0
 #define DMD_DATA_IMPORTANT_INDEX 1
 #define DMD_DATA_REGULER_INDEX 6
@@ -516,10 +517,6 @@ void setupDMD()
   ledcAttachPin(4, 0);
   ledcWrite(0, 20);
 
-  dmd.clearScreen(true);
-  marqueeText(Arial_Black_16, "Assalamu'alaikum",1);
-  dmd.clearScreen(true);
-  marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
   //setup clock
   wifi_mode_t mode = WiFi.getMode();
@@ -531,6 +528,12 @@ void setupDMD()
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"3. Masuk menu 'Wifi manager' dan set wifi akses anda yg terkoneksi ke internet",false,"Cara Setup",false,System5x7,1000,5000);
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"4. silakan restart device anda",false,"Cara Setup",false,System5x7,1000,5000);
   }
+
+  dmd.clearScreen(true);
+  marqueeText(Arial_Black_16, "Assalamu'alaikum",1);
+  dmd.clearScreen(true);
+  marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
+
   logln("DMD is coming");
 }
 
@@ -1847,8 +1850,7 @@ void taskCountDownJWS(void * parameter){
 
     log("Counter Countdown for ");
     log(type_jws);
-    logf(" : %d",counter);
-    logf(" ==> %d - %d - %d",hours,minutes,seconds);
+    logf(" : %d ==> %d - %d - %d",counter,hours,minutes,seconds);
 
 
     logf("Countdown JWS stack size : %d",uxTaskGetStackHighWaterMark(NULL));
@@ -1902,6 +1904,59 @@ void stopTaskCountdownJWS(){
 //==================================   Task Firebase Scheduler  ===========
 //=========================================================================
 
+#define NASEHAT_COUNT_MAX 10
+
+boolean appendFile(const char * text, const char * fileName, boolean overWrite){
+  size_t result = 0;
+  File file;
+  if(fileName != NULL){
+    if(!SPIFFS.exists(fileName)){
+      file = SPIFFS.open(fileName, FILE_WRITE);
+    } else {
+      if(overWrite){
+        SPIFFS.remove(fileName);
+        file = SPIFFS.open(fileName, FILE_WRITE);
+      } else {
+        file = SPIFFS.open(fileName, FILE_APPEND);
+      }
+    }
+    if(file){
+      if(text != NULL){
+        result = file.println(text);
+      }
+      file.close();
+    }
+  }
+  return result;
+}
+
+std::array<String,NASEHAT_COUNT_MAX> readFile(const char * fileName){
+  File file;
+  std::array<String,NASEHAT_COUNT_MAX> stringResult;
+  if(fileName != NULL){
+    if(SPIFFS.exists(fileName)){
+      file = SPIFFS.open(fileName, FILE_READ);
+      if(file){
+        int count = 0;
+        while(file.available() && count < NASEHAT_COUNT_MAX){
+          String line = file.readStringUntil('\n');
+          stringResult[count] = line;
+          count++;
+        }
+        file.close();
+      }
+    }
+  }
+  return stringResult;
+}
+
+
+void setupDMDNasehat(const char * info){
+  setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,info,true,"",false,Arial_Black_16,1000,10000,msDistanceFromNowToTime(23, 59, 0));
+  setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
+  setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,type_jws,false,count_down_jws,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
+}
+
 // Your Firebase Project Web API Key
 #define FB_API_KEY "AIzaSyAQ1OoPvV3_235dZPvZKW5CN-8pQghjJbQ"
 // Your Firebase Realtime database URL
@@ -1910,6 +1965,7 @@ void taskFirebase(void * parameter){
   FirebaseData fbdo;
   FirebaseAuth auth;
   FirebaseConfig config;
+  std::array<String,10> nasehatVector;
   String nasehatListPath = "/app/nasehat/list";
   String fuid = ""; 
   bool isAuthenticated = false;
@@ -1920,6 +1976,7 @@ void taskFirebase(void * parameter){
   fbdo.setResponseSize(8192); //minimum size is 4096 bytes
   logln("------------------------------------");
   logln("Firebase Sign up new user...");
+  xSemaphoreTake(mutex_con, portMAX_DELAY); 
   // Sign in to firebase Anonymously
   if (Firebase.signUp(&config, &auth, "", "")){
     logln("Firebase signup Success");
@@ -1942,7 +1999,6 @@ void taskFirebase(void * parameter){
   //config.signer.tokens.legacy_token = "kNVt4A1fFWNFifHbGMYqPR9hVwL4DE9S1Nyik9iG";
 
   // Initialise the firebase library
-  xSemaphoreTake(mutex_con, portMAX_DELAY); 
   Firebase.begin(&config, &auth);
   xSemaphoreGive(mutex_con);
 
@@ -1952,15 +2008,15 @@ void taskFirebase(void * parameter){
   for(;;){
     xSemaphoreTake(mutex_con, portMAX_DELAY); 
     {
-      // Check that 10 seconds has elapsed before, device is authenticated and the firebase service is ready.
-      boolean isFirebaseReady = Firebase.ready();
-      logf("Firebase ready or not ? %d",isFirebaseReady);
-      if (isAuthenticated && isFirebaseReady){
+      boolean isFbReady = Firebase.ready();
+      logf("Firebase ready or not ? %d",isFbReady);
+      if (isAuthenticated && isFbReady){
           logln("------------------------------------");
           logln("Firebase get data...");
 
           if(Firebase.getArray(fbdo, nasehatListPath)){
             FirebaseJsonArray fbja = fbdo.jsonArray();
+            //appendFile(NULL,"/nasehat_firebase.txt",true);
             for (size_t i = 0; i < fbja.size(); i++){
               FirebaseJsonData result;
               //result now used as temporary object to get the parse results
@@ -1969,17 +2025,27 @@ void taskFirebase(void * parameter){
               //Print its value
               logf("Array index: %d, type: %d, value: %s",i,result.type,result.to<String>().c_str());
 
-              char * info = getAllocatedString(result.to<String>());
-              setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,info,true,"",false,Arial_Black_16,1000,10000,msDistanceFromNowToTime(23, 59, 0));
-              setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
-              setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,type_jws,false,count_down_jws,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
+              const char * info = getAllocatedString(result.to<String>());
+              setupDMDNasehat(info);
+
+              //appendFile(info,"/nasehat_firebase.txt",false);
             }
+            isFirebaseReady = true;
             logln("Firebase get process...");
+          } else {
+            isFbReady = false;
           }
-          //Firebase.setInt(fbdo, "/app/test", test);
-          //test++;
           logln("Firebase done data...");
       }
+      
+      // if(!isFbReady && isFirebaseReady){
+      //   nasehatVector = readFile("/nasehat_firebase.txt");
+      //   for(int x=0; x<NASEHAT_COUNT_MAX; x++){
+      //     String info = nasehatVector.at(x);
+      //     Serial.println(info);
+      //     //setupDMDNasehat(info.c_str());
+      //   }
+      // }
     }
     xSemaphoreGive(mutex_con);
     delayMSUntilAtTime(1,20,0);
@@ -2023,6 +2089,8 @@ void listAllFiles(){
       file = root.openNextFile();
   }
 }
+
+
 
 //=========================================================================
 //==================================   Main App  ==========================
@@ -2136,7 +2204,7 @@ void setup()
     delay(5000);
 
     startTaskDMD();
-    delay(6000);
+    delay(10000);
 
     xTaskCreatePinnedToCore(
         taskFirebase,        // Function that should be called
