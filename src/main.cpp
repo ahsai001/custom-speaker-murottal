@@ -105,9 +105,10 @@ char count_down_jws[9] = "--:--:--"; //04:30:00
 WebSocketsServer webSocket = WebSocketsServer(81);
 
 void log(const char * message){
+  size_t len = strlen(message);
   Serial.print(message);
   if(isWebSocketReady){
-    webSocket.broadcastTXT(message, strlen(message));
+    webSocket.broadcastTXT(message, len);
   }
 }
 
@@ -116,7 +117,7 @@ void logln(const char * message){
   log(message);
   Serial.println();
   if(isWebSocketReady){
-    webSocket.broadcastTXT("<br>",4, false);
+    webSocket.broadcastTXT("<br>",4);
   }
 }
 
@@ -144,12 +145,8 @@ void logf(const char *format, ...){
   }
   va_end(arg);
 
-  Serial.print(temp);
-  Serial.println();
-  if(isWebSocketReady){
-    webSocket.broadcastTXT(temp, len, false);
-    webSocket.broadcastTXT("<br>",4, false);
-  }
+  logln(temp);
+
   if(temp != loc_buf){
       free(temp);
   }
@@ -212,9 +209,9 @@ void taskWebSocketServer(void * paramater){
 char * getAllocatedString(String text){
   unsigned int length = text.length()+1;
   char * allocatedString = (char *)malloc(sizeof(char)*(length));
-  memset(allocatedString,'\0',sizeof(char)*length);
+  //memset(allocatedString,'\0',sizeof(char)*length);
   sprintf_P(allocatedString, (PGM_P)F("%s"), text.c_str());
-  //allocatedString[length-1] = '\0';
+  allocatedString[length-1] = '\0';
   return allocatedString;
 }
 
@@ -329,10 +326,10 @@ enum DMDType {
 
 struct DMD_Data{
   int type = -1; //0:datetime, 1:jws, 2:scrollingtext, 3:countdown, 4:countup
-  char * text1;
+  char * text1 = NULL;
   uint8_t speed1 = 0;
   bool need_free_text1 = false;
-  char * text2;
+  char * text2 = NULL;
   uint8_t speed2 = 0;
   bool need_free_text2 = false;
   const uint8_t * font;
@@ -410,8 +407,7 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
     xSemaphoreGive(mutex_dmd); 
     return;
   }
-  logf("%s : %s,index : %d,type : %d,max_count : %d,life_time : %d", text1,text2,index,type,max_count,life_time_inMS);
-
+  
   dmd_data_list[index].type = type;
   dmd_data_list[index].text1 = (char*)text1;
   dmd_data_list[index].speed1 = speed1;
@@ -426,6 +422,9 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
   dmd_data_list[index].count = 0;
   dmd_data_list[index].life_time_inMS = life_time_inMS;
   dmd_data_list[index].start_time_inMS = start_time_inMS;
+  
+  logf("%s : %s,index : %d,type : %d,max_count : %d,life_time : %ld", text1,text2,index,type,max_count,life_time_inMS);
+
   logln("dmd done .....");
   xSemaphoreGive(mutex_dmd); 
 }
@@ -581,18 +580,6 @@ void taskDMD(void *parameter)
 
       DMD_Data * item = dmd_data_list+dmd_loop_index;
 
-      xSemaphoreTake(mutex_con, portMAX_DELAY);
-      logln("======= start ======");
-      logf("index : %d", dmd_loop_index);
-      logf("type : %d", item->type);
-      logf("text1 : %d", item->text1);
-      logf("text2 : %d", item->text2);
-      logf("start_time : %d", item->start_time_inMS);
-      logf("max_count : %d", item->max_count);
-      logf("life_time : %d", item->life_time_inMS);
-      logln("======== end =======");
-      xSemaphoreGive(mutex_con);
-
       if(item->type < 0){
         //logln("no type");
         continue;
@@ -623,6 +610,8 @@ void taskDMD(void *parameter)
         //logln("delete");
         continue;
       }
+
+      logf("index : %d, type : %d, text1 : %s, text2 : %s, start_time : %lld, max_count : %d, life_time : %ld", dmd_loop_index, item->type, item->text1, item->text2, item->start_time_inMS, item->max_count, item->life_time_inMS);
 
       //logln("go.................");
       dmd.clearScreen(true);
