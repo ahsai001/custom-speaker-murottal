@@ -121,7 +121,7 @@ void logln(const char * message){
 }
 
 void logf(const char *format, ...){
-  char loc_buf[64];
+  char loc_buf[128];
   char * temp = loc_buf;
   va_list arg;
   va_list copy;
@@ -135,6 +135,7 @@ void logf(const char *format, ...){
   };
   if(len >= sizeof(loc_buf)){
       temp = (char*) malloc(len+1);
+      temp[len] = '\0';
       if(temp == NULL) {
           va_end(arg);
           return;
@@ -580,22 +581,17 @@ void taskDMD(void *parameter)
 
       DMD_Data * item = dmd_data_list+dmd_loop_index;
 
-      // logln("here 1");
-      // log("index : ");
-      // log(dmd_loop_index);
-      // log(",type : ");
-      // log(item->type);
-      // log(",text1 : ");
-      // log(item->text1);
-      // log(",text2 : ");
-      // log(item->text2);
-      // log(",start_time : ");
-      // log(item->start_time_inMS);
-      // log(",max_count : ");
-      // log(item->max_count);
-      // log(",life_time : ");
-      // logln(item->life_time_inMS);
-      // logln("here 2");
+      xSemaphoreTake(mutex_con, portMAX_DELAY);
+      logln("======= start ======");
+      logf("index : %d", dmd_loop_index);
+      logf("type : %d", item->type);
+      logf("text1 : %d", item->text1);
+      logf("text2 : %d", item->text2);
+      logf("start_time : %d", item->start_time_inMS);
+      logf("max_count : %d", item->max_count);
+      logf("life_time : %d", item->life_time_inMS);
+      logln("======== end =======");
+      xSemaphoreGive(mutex_con);
 
       if(item->type < 0){
         //logln("no type");
@@ -674,7 +670,6 @@ void taskDMD(void *parameter)
             drawTextCenter(item->font, item->text1, 9); 
             break;
           case DMD_TYPE_SCROLL: //single scrolling text
-            //marqueeText(item->font, item->text1, 1);
             {
               dmd.selectFont(item->font);
               dmd.drawMarquee(item->text1, strlen(item->text1), (32 * DISPLAYS_ACROSS) - 1, 1);
