@@ -620,7 +620,7 @@ void taskDMD(void *parameter)
         if(need_reset_dmd_loop_index){
           break;
         }
-
+        log("go");
         switch (item->type)
         {
           case DMD_TYPE_SCROLL_STATIC:
@@ -1953,6 +1953,12 @@ void setupDMDNasehat(const char * info){
 // Your Firebase Realtime database URL
 #define FB_DATABASE_URL "https://custom-speaker-murottal-default-rtdb.asia-southeast1.firebasedatabase.app/"
 void taskFirebase(void * parameter){
+  while (!isWiFiReady)
+  {
+    logln("Task Firebase nasehat waiting for wifi...");
+    delay(5000);
+  }
+  
   FirebaseData fbdo;
   FirebaseAuth auth;
   FirebaseConfig config;
@@ -1997,36 +2003,39 @@ void taskFirebase(void * parameter){
   logf("Firebase stack size : %d",uxTaskGetStackHighWaterMark(NULL));
   //int test = 0;
   for(;;){
+    boolean isFbReady = false;
     xSemaphoreTake(mutex_con, portMAX_DELAY); 
     {
-      boolean isFbReady = Firebase.ready();
-      logf("Firebase ready or not ? %d",isFbReady);
-      if (isAuthenticated && isFbReady){
-          logln("------------------------------------");
-          logln("Firebase get data...");
+      if(isWiFiReady){
+        isFbReady = Firebase.ready();
+        logf("Firebase ready or not ? %d",isFbReady);
+        if (isAuthenticated && isFbReady){
+            logln("------------------------------------");
+            logln("Firebase get data...");
 
-          if(Firebase.getArray(fbdo, nasehatListPath)){
-            FirebaseJsonArray fbja = fbdo.jsonArray();
-            //appendFile(NULL,"/nasehat_firebase.txt",true);
-            for (size_t i = 0; i < fbja.size(); i++){
-              FirebaseJsonData result;
-              //result now used as temporary object to get the parse results
-              fbja.get(result, i);
+            if(Firebase.getArray(fbdo, nasehatListPath)){
+              FirebaseJsonArray fbja = fbdo.jsonArray();
+              //appendFile(NULL,"/nasehat_firebase.txt",true);
+              for (size_t i = 0; i < fbja.size(); i++){
+                FirebaseJsonData result;
+                //result now used as temporary object to get the parse results
+                fbja.get(result, i);
 
-              //Print its value
-              logf("Array index: %d, type: %d, value: %s",i,result.type,result.to<String>().c_str());
+                //Print its value
+                logf("Array index: %d, type: %d, value: %s",i,result.type,result.to<String>().c_str());
 
-              const char * info = getAllocatedString(result.to<String>());
-              setupDMDNasehat(info);
+                const char * info = getAllocatedString(result.to<String>());
+                setupDMDNasehat(info);
 
-              //appendFile(info,"/nasehat_firebase.txt",false);
+                //appendFile(info,"/nasehat_firebase.txt",false);
+              }
+              isFirebaseReady = true;
+              logln("Firebase get process...");
+            } else {
+              isFbReady = false;
             }
-            isFirebaseReady = true;
-            logln("Firebase get process...");
-          } else {
-            isFbReady = false;
-          }
-          logln("Firebase done data...");
+            logln("Firebase done data...");
+        }
       }
       
       // if(!isFbReady && isFirebaseReady){
@@ -2039,7 +2048,15 @@ void taskFirebase(void * parameter){
       // }
     }
     xSemaphoreGive(mutex_con);
-    delayMSUntilAtTime(1,20,0);
+    if(!isFbReady){
+      if(!isWiFiReady){
+        delay(10000);
+      } else {
+        delay(60000);
+      }
+    } else {
+      delayMSUntilAtTime(1,20,0);
+    }
   }
 }
 
