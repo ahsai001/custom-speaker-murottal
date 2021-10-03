@@ -522,6 +522,7 @@ void setupDMD()
   wifi_mode_t mode = WiFi.getMode();
   if(mode == WIFI_MODE_STA){
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,15000);
+    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"hello",false,str_clock_full,false,System5x7,1000,15000);
   } else if(mode == WIFI_MODE_AP){
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"1. silakan connect ke wifi 'Speaker Murottal AP' dengan password 'qwerty654321'",false,"Cara Setup",false,System5x7,1000,5000);
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"2. Akses website http://speaker-murottal.local",false,"Cara Setup",false,System5x7,1000,5000);
@@ -630,8 +631,15 @@ void taskDMD(void *parameter)
               unsigned long timer = start;
               dmd.selectFont(item->font);
               int width = stringWidth(item->font,item->text1);
+              int8_t step = 1;
+              bool isBounce = false;
               int posx = (32*DISPLAYS_ACROSS) - 1;
               bool message_full_displayed = false;
+              if(width <= (32*DISPLAYS_ACROSS)){
+                  isBounce = true;
+                  posx = 0;
+                  message_full_displayed = true;
+              }
               while(counter >= 0 || !message_full_displayed){
                   if(need_reset_dmd_loop_index){
                     break;
@@ -643,12 +651,22 @@ void taskDMD(void *parameter)
                   }
                   if (millis() - timer > marquee_speed){
                     log("*");
-                    dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
-                    if(posx < (-1*width)){
-                      posx = (32*DISPLAYS_ACROSS) - 1;
-                      message_full_displayed = true;
+                    dmd.drawString(posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
+                    if(isBounce){
+                      posx += step;
+                      if(posx >= ((32*DISPLAYS_ACROSS)-width)){
+                        step = -1;
+                      } else if(posx<=0){
+                        step = 1;
+                      }
                     } else {
-                      message_full_displayed = false;
+                      if(posx < (-1*width)){
+                        posx = (32*DISPLAYS_ACROSS) - 1;
+                        message_full_displayed = true;
+                      } else {
+                        message_full_displayed = false;
+                      }
+                      posx--;
                     }
                     timer = millis();
                   }
@@ -1003,13 +1021,16 @@ const char index_html_wifi[] PROGMEM = R"rawliteral(
  <head>
   <meta content="text/html; charset=ISO-8859-1" http-equiv="content-type">
   <meta name = "viewport" content = "width = device-width, initial-scale = 1.0, maximum-scale = 1.0, user-scalable=0">
-  <title>WiFi Creds Form</title>
+  <title>AhsaiLabs Speaker Qur'an</title>
   <style>
-   body { background-color: #808080; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; text-align:center; }
+   body { 
+      background-color: #e6d8d5;
+      text-align: center;
+     }
   </style>
  </head>
  <body>
-  <h3>Enter your WiFi credentials</h3>
+  <h1>Setting WiFi Speaker Qur'an Ahsailabs</h1>
   <form action="/wifi" method="post">
   <p>
    <label>SSID:&nbsp;</label>
@@ -1028,59 +1049,63 @@ const char index_html_wifi[] PROGMEM = R"rawliteral(
 
 const char index_html_setting[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
-  <title>Custom Speaker Murottal Setting</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" href="data:,">
-  <style>
-    body {
-      text-align: center;
-      font-family: "Trebuchet MS", Arial;
-      margin-left:auto;
-      margin-right:auto;
-    }
-    .slider {
-      width: 300px;
-    }
-  </style>
-  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
-  </head><body>
-  <form action="/get-setting">
-    Flash Message: <input type="text" name="scrolltext">
-    <input type="submit" value="Notify">
-  </form><br>
-  <p>Brightness: <span id="brightnessPos"></span> %</p>
-  <input type="range" min="0" max="255" value="20" class="slider" id="brightnessSlider" onchange="brightnessChange(this.value)"/>
-  <script>
-    $.ajaxSetup({timeout:1000});
-
-    var slider = document.getElementById("brightnessSlider");
-    var brightnessP = document.getElementById("brightnessPos");
-    brightnessP.innerHTML = Math.round((slider.value/255)*100);
-    $.get("/brightness?level=" + slider.value);
-
-    slider.oninput = function() {
-      slider.value = this.value;
-      brightnessP.innerHTML = Math.round((this.value/255)*100);
-    }
-    function brightnessChange(pos) {
-      $.get("/brightness?level=" + pos);
-    }
-  </script>
-</body></html>)rawliteral";
+    <title>AhsaiLabs Speaker Qur'an</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <style>
+      body {
+        background-color: #e6d8d5;
+        text-align: center;
+      }
+      .slider {
+        width: 300px;
+      }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    </head><body>
+        <h1>Setting Speaker Qur'an Ahsailabs</h1>
+    <form action="/get-setting">
+      Flash Message: <input type="text" name="scrolltext">
+      <input type="submit" value="Notify">
+    </form><br>
+    <p>Brightness: <span id="brightnessPos"></span> %</p>
+    <input type="range" min="0" max="255" value="20" class="slider" id="brightnessSlider" onchange="brightnessChange(this.value)"/>
+    <script>
+      $.ajaxSetup({timeout:1000});
+  
+      var slider = document.getElementById("brightnessSlider");
+      var brightnessP = document.getElementById("brightnessPos");
+      brightnessP.innerHTML = Math.round((slider.value/255)*100);
+      $.get("/brightness?level=" + slider.value);
+  
+      slider.oninput = function() {
+        slider.value = this.value;
+        brightnessP.innerHTML = Math.round((this.value/255)*100);
+      }
+      function brightnessChange(pos) {
+        $.get("/brightness?level=" + pos);
+      }
+    </script>
+  </body></html>
+)rawliteral";
 
 const char index_html_ws[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Log Serial</title>
+    <title>AhsaiLabs Speaker Qur'an</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta charset="UTF-8" />
     <style>
       body {
         background-color: #e6d8d5;
       }
+      h1 {
+        text-align: center;
+      }
       p {
         background-color: #a59999;
+        word-wrap: break-word;
         color: #020000;
       }
       /* The switch - the box around the slider */
@@ -1202,7 +1227,7 @@ const char index_html_root[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Log Serial</title>
+    <title>AhsaiLabs Speaker Qur'an</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta charset="UTF-8" />
     <style>
@@ -1210,18 +1235,33 @@ const char index_html_root[] PROGMEM = R"rawliteral(
         background-color: #e6d8d5;
         text-align: center;
       }
-      a {
+      div {
         display: block;
+        width: 50%;
         line-height: 30px;
+        margin: 10px auto;
+        background-color: aqua;
+      }
+
+      div a:hover {
+        color: white;
+        background-color: blueviolet;
+      }
+
+      div a {
+        display: block;
+        width: 100%;
+        color: black;
+        text-decoration: none;
       }
     </style>
   </head>
   <body>
     <h1>Selamat datang sahabat pengguna Speaker Murottal by AhsaiLabs</h1>
-    <a href="/wifi">Wifi Manager</a>
-    <a href="/setting">Settings</a>
-    <a href="/logs">Show Logs</a>
-    <a href="/restart">Restart</a>
+    <div><a href="/wifi">Wifi Manager</a></div>
+    <div><a href="/setting">Settings</a></div>
+    <div><a href="/logs">Show Logs</a></div>
+    <div><a href="/restart">Restart</a></div>
   </body>
   <script>
     function init() {

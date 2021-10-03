@@ -1,15 +1,17 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Log Serial</title>
+    <title>AhsaiLabs Speaker Qur'an</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta charset="UTF-8" />
     <style>
       body {
         background-color: #e6d8d5;
+        text-align: center;
       }
       p {
         background-color: #a59999;
+        word-wrap: break-word;
         color: #020000;
       }
       /* The switch - the box around the slider */
@@ -80,7 +82,6 @@
     <h1 id="heading">Received Logs: <small>active</small></h1>
     <p id="message"></p>
     <button type="button" id="btn_reset">reset</button>
-    <br>
     <label class="switch">
       <input id="cb_on" type="checkbox" onclick="handleClick(this);" checked/>
       <span class="slider round"></span>
@@ -108,6 +109,7 @@
         heading.innerHTML = "Received Logs: <small>inactive</small>";
       }
     }
+
     function processCommand(event) {
       if (cb_on.checked) {
         var log = event.data;
@@ -115,9 +117,10 @@
         console.log(log);
       }
     }
+
     function button_reset_pressed() {
       //Socket.send("on");
-      p_message.innerHTML = "...";
+      p_message.innerHTML = "";
     }
     window.onload = function (event) {
       init();

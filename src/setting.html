@@ -1,0 +1,39 @@
+<!DOCTYPE HTML><html><head>
+    <title>AhsaiLabs Speaker Qur'an</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <style>
+      body {
+        background-color: #e6d8d5;
+        text-align: center;
+      }
+      .slider {
+        width: 300px;
+      }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    </head><body>
+        <h1>Setting Speaker Qur'an Ahsailabs</h1>
+    <form action="/get-setting">
+      Flash Message: <input type="text" name="scrolltext">
+      <input type="submit" value="Notify">
+    </form><br>
+    <p>Brightness: <span id="brightnessPos"></span> %</p>
+    <input type="range" min="0" max="255" value="20" class="slider" id="brightnessSlider" onchange="brightnessChange(this.value)"/>
+    <script>
+      $.ajaxSetup({timeout:1000});
+  
+      var slider = document.getElementById("brightnessSlider");
+      var brightnessP = document.getElementById("brightnessPos");
+      brightnessP.innerHTML = Math.round((slider.value/255)*100);
+      $.get("/brightness?level=" + slider.value);
+  
+      slider.oninput = function() {
+        slider.value = this.value;
+        brightnessP.innerHTML = Math.round((this.value/255)*100);
+      }
+      function brightnessChange(pos) {
+        $.get("/brightness?level=" + pos);
+      }
+    </script>
+  </body></html>
