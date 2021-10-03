@@ -810,6 +810,7 @@ void taskDMD(void *parameter)
           default:
             break;
         }
+        logln("*");
         delay(item->delay_inMS);
       } //end while
     } //end for
