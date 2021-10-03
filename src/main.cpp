@@ -642,6 +642,7 @@ void taskDMD(void *parameter)
                     counter--;
                   }
                   if (millis() - timer > marquee_speed){
+                    log("*");
                     dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                     if(posx < (-1*width)){
                       posx = (32*DISPLAYS_ACROSS) - 1;
@@ -671,6 +672,7 @@ void taskDMD(void *parameter)
                 }
                 if ((timer + marquee_speed) < millis())
                 {
+                  log("*");
                   ret = dmd.stepMarquee(-1, 0);
                   timer = millis();
                 }
@@ -724,6 +726,7 @@ void taskDMD(void *parameter)
                 }
 
                 if (millis() - timer > marquee_speed){
+                  log("*");
                   dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                   if(posx < (-1*width)){
                     posx = (32*DISPLAYS_ACROSS) - 1;
@@ -774,6 +777,7 @@ void taskDMD(void *parameter)
                 }
 
                 if (millis() - timer > marquee_speed){
+                  log("*");
                   dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                   if(posx < (-1*width)){
                     posx = (32*DISPLAYS_ACROSS) - 1;
