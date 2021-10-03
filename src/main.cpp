@@ -522,7 +522,6 @@ void setupDMD()
   wifi_mode_t mode = WiFi.getMode();
   if(mode == WIFI_MODE_STA){
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,15000);
-    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"hello",false,str_clock_full,false,System5x7,1000,15000);
   } else if(mode == WIFI_MODE_AP){
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"1. silakan connect ke wifi 'Speaker Murottal AP' dengan password 'qwerty654321'",false,"Cara Setup",false,System5x7,1000,5000);
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"2. Akses website http://speaker-murottal.local",false,"Cara Setup",false,System5x7,1000,5000);
