@@ -699,7 +699,8 @@ void taskDMD(void *parameter)
               unsigned long timer = start;
               int width = stringWidth(item->font,item->text1);
               int posx = (32*DISPLAYS_ACROSS) - 1;
-              while(counter >= 0){
+              bool message_full_displayed = false;
+              while(counter >= 0 || !message_full_displayed){
                 if(need_reset_dmd_loop_index){
                   break;
                 }
@@ -726,6 +727,9 @@ void taskDMD(void *parameter)
                   dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                   if(posx < (-1*width)){
                     posx = (32*DISPLAYS_ACROSS) - 1;
+                    message_full_displayed = true;
+                  } else {
+                    message_full_displayed = false;
                   }
                   timer = millis();
                 }
@@ -746,7 +750,8 @@ void taskDMD(void *parameter)
               int width = stringWidth(item->font,item->text1);
               int posx = (32*DISPLAYS_ACROSS) - 1;
               int countup = 0;
-              while(countup <= counter){
+              bool message_full_displayed = false;
+              while(countup <= counter || !message_full_displayed){
                 if(need_reset_dmd_loop_index){
                   break;
                 }
@@ -772,6 +777,9 @@ void taskDMD(void *parameter)
                   dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                   if(posx < (-1*width)){
                     posx = (32*DISPLAYS_ACROSS) - 1;
+                    message_full_displayed = true;
+                  } else {
+                    message_full_displayed = true;
                   }
                   timer = millis();
                 }
@@ -960,7 +968,6 @@ void taskKeepWiFiAlive(void *parameter)
     if (WiFi.status() != WL_CONNECTED)
     {
       logln("[WIFI] FAILED");
-      stopTaskToggleLED();
       delay(WIFI_RECOVER_TIME_MS);
       continue;
     }
