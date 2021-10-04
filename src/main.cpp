@@ -1404,7 +1404,7 @@ void taskWebServer(void *parameter)
                 hijri_month = server.arg("hijri_month").toInt();
                 hijri_year = server.arg("hijri_year").toInt();
                 String hijri_month_names[] = {"Muharam", "Safar", "Rabiul Awal", "Rabiul Akhir", "Jumadil Awal", "Jumadil Akhir", "Rajab", "Sya'ban", "Ramadhan", "Syawal", "Dzulqo'dah", "Dzulhijjah"};
-                sprintf_P(str_hijri_date, (PGM_P)F("%d %s %d"), hijri_day,hijri_month_names[hijri_month], hijri_year);
+                sprintf_P(str_hijri_date, (PGM_P)F("%d %s %d"), hijri_day,hijri_month_names[hijri_month].c_str(), hijri_year);
               }
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
