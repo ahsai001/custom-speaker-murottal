@@ -15,8 +15,48 @@
     </head><body>
         <h1>Setting Speaker Qur'an Ahsailabs</h1>
     <form action="/get-setting">
-      Flash Message: <input type="text" name="scrolltext">
+      Flash Message: <input type="text" name="scrolltext" required>
       <input type="submit" value="Notify">
+    </form><br><br><br>
+    <form action="/get-setting">
+      Current Time : <input type="time" name="time" required>
+      <input type="submit" value="Set Time">
+    </form><br><br><br>
+    <form action="/get-setting">
+      <label for="day">Current day :</label>
+      <select name="day" required>
+        <option value="0">Ahad</option>
+        <option value="1">Senin</option>
+        <option value="2">Selasa</option>
+        <option value="3">Rabu</option>
+        <option value="4">Kamis</option>
+        <option value="5">Jum'at</option>
+        <option value="6">Sabtu</option>
+      </select>
+      <br>
+      Current Date : <input type="date" name="date" required>
+      <br>
+      Current Hijri Day : <input type="number" name="hijri_day" min="1" max="30" required>
+      <br>
+      <label for="hijri_month">Current Hijri Month:</label>
+      <select name="hijri_month" required>
+        <option value="0">Muharram</option>
+        <option value="1">Shafar</option>
+        <option value="2">Rabiul Awwal</option>
+        <option value="3">Rabiul Akhir</option>
+        <option value="4">Jumadil Awwal</option>
+        <option value="5">Jumadil Akhir</option>
+        <option value="6">Rajab</option>
+        <option value="7">Sya'ban</option>
+        <option value="8">Ramadhan</option>
+        <option value="9">Syawal</option>
+        <option value="10">Dzulqo'dah</option>
+        <option value="11">Dzulhijjah</option>
+      </select>
+      <br>
+      Current Hijri Year: <input type="number" id="hijri_year" min="1440" name="hijri_year" required>
+      <br>
+      <input type="submit" value="Set Date">
     </form><br>
     <p>Brightness: <span id="brightnessPos"></span> %</p>
     <input type="range" min="0" max="255" value="20" class="slider" id="brightnessSlider" onchange="brightnessChange(this.value)"/>

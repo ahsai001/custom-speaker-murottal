@@ -1,11 +1,18 @@
+// #include <sdkconfig.h>
+
+// #define CONFIG_FREERTOS_IDLE_TIME_BEFORE_SLEEP 2 // must be > 1 to compile!!
+// #define CONFIG_FREERTOS_USE_TICKLESS_IDLE 1
+// #define CONFIG_PM_ENABLE 1
+// #define CONFIG_PM_USE_RTC_TIMER_REF 1
+
 #include <Arduino.h>
-#include <SPI.h>
-#include <FS.h>
+//#include <SPI.h>
+//#include <FS.h>
 #include <WiFi.h>
 #include <SPIFFS.h>
-#include <SD.h>
+//#include <SD.h>
 #include <WiFiClientSecure.h>
-#include <WiFiClient.h>
+//#include <WiFiClient.h>
 #include <WebServer.h>
 #include <WebSocketsServer.h>
 #include <ESPmDNS.h>
@@ -14,14 +21,15 @@
 #include "fonts/Arial_black_16.h"
 #include "HTTPClient.h"
 #include "ArduinoJson.h"
-#include <nvs_flash.h>
+//#include <nvs_flash.h>
 #include <Preferences.h>
-#include <FirebaseFS.h>
+//#include <FirebaseFS.h>
 #include <FirebaseESP32.h>
 //Provide the token generation process info.
 #include "addons/TokenHelper.h"
 //Provide the RTDB payload printing info and other helper functions.
-#include "addons/RTDBHelper.h"
+//#include "addons/RTDBHelper.h"
+//#include "esp_pm.h"
 
 
 
@@ -48,10 +56,15 @@ SemaphoreHandle_t mutex_dmd;
 
 Preferences preferences;
 
+bool isClockManual = false;
 volatile int h24 = 12; //hours in 24 format
 volatile int h = 12; // hours in 12 format
 volatile int m = 0; //minutes
 volatile int s = 0; //seconds
+
+char * manual_time = NULL;
+char * manual_date = NULL;
+
 char str_clock_full[9] = "--:--:--"; //used by dmd task
 char str_date[26] = "------, -- --------- ----"; //used by dmd task
 char str_hijri_date[30] = "-- ------- ----- ----";
@@ -274,19 +287,21 @@ void delayMSUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
     delay(msDistanceFromNowToTime(hours, minutes, seconds));
 }
 
-void eraseNVS(){
-  nvs_flash_erase(); // erase the NVS partition and...
-  nvs_flash_init(); // initialize the NVS partition.
-  ESP.restart();
-  while(true);
-}
+// void eraseNVS(){
+//   nvs_flash_erase(); // erase the NVS partition and...
+//   nvs_flash_init(); // initialize the NVS partition.
+//   ESP.restart();
+//   while(true);
+// }
 
 std::array<unsigned long, 4>  getArrayOfTime(const char * time){
-  //log("getArrayOfTime : ");
-  //log(time);
-
   char copied_time[9] = {'\0'};
-  sprintf_P(copied_time, (PGM_P)F("%s"), time);
+
+  if(strlen(time) <= 6){
+    sprintf_P(copied_time, (PGM_P)F("%s:00"), copied_time);
+  } else {
+    sprintf_P(copied_time, (PGM_P)F("%s"), time);
+  }
 
   const char delimiter[2] = ":";
   char * token = strtok(copied_time, delimiter);
@@ -306,6 +321,22 @@ std::array<unsigned long, 4>  getArrayOfTime(const char * time){
   // log(as[2]);
   // log("-");
   // logln(as[3]);
+  return as;
+}
+
+std::array<uint16_t, 3>  getArrayOfDate(const char * date){
+  char copied_date[11] = {'\0'};
+  sprintf_P(copied_date, (PGM_P)F("%s"), date);
+
+  const char delimiter[2] = "-";
+  char * token = strtok(copied_date, delimiter);
+  std::array<uint16_t, 3> as;
+  int index = 0;
+  while( token != NULL ) {
+      as[index] = atoi(token);
+      index++;
+      token = strtok(NULL, delimiter);
+  }
   return as;
 }
 
@@ -1065,8 +1096,48 @@ const char index_html_setting[] PROGMEM = R"rawliteral(
     </head><body>
         <h1>Setting Speaker Qur'an Ahsailabs</h1>
     <form action="/get-setting">
-      Flash Message: <input type="text" name="scrolltext">
+      Flash Message: <input type="text" name="scrolltext" required>
       <input type="submit" value="Notify">
+    </form><br><br><br>
+    <form action="/get-setting">
+      Current Time : <input type="time" name="time" required>
+      <input type="submit" value="Set Time">
+    </form><br><br><br>
+    <form action="/get-setting">
+      <label for="day">Current day :</label>
+      <select name="day" required>
+        <option value="0">Ahad</option>
+        <option value="1">Senin</option>
+        <option value="2">Selasa</option>
+        <option value="3">Rabu</option>
+        <option value="4">Kamis</option>
+        <option value="5">Jum'at</option>
+        <option value="6">Sabtu</option>
+      </select>
+      <br>
+      Current Date : <input type="date" name="date" required>
+      <br>
+      Current Hijri Day : <input type="number" name="hijri_day" min="1" max="30" required>
+      <br>
+      <label for="hijri_month">Current Hijri Month:</label>
+      <select name="hijri_month" required>
+        <option value="0">Muharram</option>
+        <option value="1">Shafar</option>
+        <option value="2">Rabiul Awwal</option>
+        <option value="3">Rabiul Akhir</option>
+        <option value="4">Jumadil Awwal</option>
+        <option value="5">Jumadil Akhir</option>
+        <option value="6">Rajab</option>
+        <option value="7">Sya'ban</option>
+        <option value="8">Ramadhan</option>
+        <option value="9">Syawal</option>
+        <option value="10">Dzulqo'dah</option>
+        <option value="11">Dzulhijjah</option>
+      </select>
+      <br>
+      Current Hijri Year: <input type="number" id="hijri_year" min="1440" name="hijri_year" required>
+      <br>
+      <input type="submit" value="Set Date">
     </form><br>
     <p>Brightness: <span id="brightnessPos"></span> %</p>
     <input type="range" min="0" max="255" value="20" class="slider" id="brightnessSlider" onchange="brightnessChange(this.value)"/>
@@ -1313,9 +1384,28 @@ void taskWebServer(void *parameter)
 
   server.on("/get-setting", []()
             {
-              String scrolltext = server.arg("scrolltext");
-              char * info = getAllocatedString(scrolltext);            
-              showFlashMessage(info,true);
+              if(server.hasArg("scrolltext")){
+                String scrolltext = server.arg("scrolltext");
+                char * info = getAllocatedString(scrolltext);            
+                showFlashMessage(info,true);
+              } else if(server.hasArg("time")){
+                String time = server.arg("time");
+                manual_time = getAllocatedString(time.c_str());
+                isClockManual = true;
+              } else if(server.hasArg("date")){
+                String date = server.arg("date");
+                std::array<uint16_t, 3> dateInfo = getArrayOfDate(date.c_str());
+                day = dateInfo[2];
+                month = dateInfo[1];
+                year = dateInfo[0];
+                weekday = server.arg("day").toInt();
+                hijri_day = server.arg("hijri_day").toInt();
+                hijri_month = server.arg("hijri_month").toInt();
+                hijri_year = server.arg("hijri_year").toInt();
+
+                String hijri_month_names[] = {"Muharam", "Safar", "Rabiul Awal", "Rabiul Akhir", "Jumadil Awal", "Jumadil Akhir", "Rajab", "Sya'ban", "Ramadhan", "Syawal", "Dzulqo'dah", "Dzulhijjah"};
+                sprintf_P(str_hijri_date, (PGM_P)F("%d %s %d"), hijri_day,hijri_month_names[hijri_month], hijri_year);
+              }
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
             });
@@ -1420,50 +1510,64 @@ const int   daylightOffset_sec = 0;
 void taskClock(void * parameter)
 {
   isClockReady = false;
-  while (!isWiFiReady)
+  while (!isWiFiReady && !isClockManual)
   {
     logln("Task clock waiting for wifi...");
     delay(5000);
   }
   
-  // Init and get the time
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  struct tm timeinfo;
-  while(!getLocalTime(&timeinfo)){
-    logln("Clock : Failed to obtain time");
-    delay(2000);
+  if(!isClockManual){
+    // Init and get the time
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    struct tm timeinfo;
+    while(!getLocalTime(&timeinfo) && !isClockManual){
+      logln("Clock : Failed to obtain time");
+      delay(2000);
+    }
+    if(!isClockManual){
+      Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+      // log("Day of week: ");
+      // logln(&timeinfo, "%A");
+      // log("Month: ");
+      // logln(&timeinfo, "%B");
+      // log("Day of Month: ");
+      // logln(&timeinfo, "%d");
+      // log("Year: ");
+      // logln(&timeinfo, "%Y");
+      // log("Hour: ");
+      // logln(&timeinfo, "%H");
+      // log("Hour (12 hour format): ");
+      // logln(&timeinfo, "%I");
+      // log("Minute: ");
+      // logln(&timeinfo, "%M");
+      // log("Second: ");
+      // logln(&timeinfo, "%S");
+
+      // strftime(timeDay,3, "%d", &timeinfo);
+      // strftime(timeMonth,10, "%B", &timeinfo);
+      // strftime(timeYear,5, "%Y", &timeinfo);
+
+
+      h24 = timeinfo.tm_hour; // 24 hours
+      h = timeinfo.tm_hour > 12 ? timeinfo.tm_hour-12 : timeinfo.tm_hour;
+      m = timeinfo.tm_min;
+      s = timeinfo.tm_sec;
+    }
+  } 
+  
+  if(isClockManual){
+    std::array<unsigned long, 4> timeInfo = getArrayOfTime(manual_time);
+    free(manual_time);
+    h24 = timeInfo[0]; // 24 hours
+    h = h24 > 12 ? h24-12 : h24;
+    m = timeInfo[1];
+    s = timeInfo[2];
+    isClockManual = false;
   }
 
-  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-  // log("Day of week: ");
-  // logln(&timeinfo, "%A");
-  // log("Month: ");
-  // logln(&timeinfo, "%B");
-  // log("Day of Month: ");
-  // logln(&timeinfo, "%d");
-  // log("Year: ");
-  // logln(&timeinfo, "%Y");
-  // log("Hour: ");
-  // logln(&timeinfo, "%H");
-  // log("Hour (12 hour format): ");
-  // logln(&timeinfo, "%I");
-  // log("Minute: ");
-  // logln(&timeinfo, "%M");
-  // log("Second: ");
-  // logln(&timeinfo, "%S");
-
-  // strftime(timeDay,3, "%d", &timeinfo);
-  // strftime(timeMonth,10, "%B", &timeinfo);
-  // strftime(timeYear,5, "%Y", &timeinfo);
+  logf("Clock stack size : %d",uxTaskGetStackHighWaterMark(NULL));
 
   String type="AM";
-
-  h24 = timeinfo.tm_hour; // 24 hours
-  h = timeinfo.tm_hour > 12 ? timeinfo.tm_hour-12 : timeinfo.tm_hour;
-  m = timeinfo.tm_min;
-  s = timeinfo.tm_sec;
-
-  logf("Clock stack size : %d",uxTaskGetStackHighWaterMark(NULL));
 
   for (;;)
   {
@@ -1603,6 +1707,9 @@ void taskDate(void * parameter)
           // Free resources
           http.end();
         }
+      } else {
+        isMasehiOfflineMode = true;
+        isHijriOfflineMode = true;
       }
 
       if(day>-1 && hijri_day>-1){
@@ -1686,7 +1793,7 @@ void taskDate(void * parameter)
     xSemaphoreGive(mutex_con);
     if(!isDateReady){
       logln("Task date waiting for wifi...");
-      delay(180000); //3 minutes
+      delay(60000); //1 minutes
     } else {
       delayMSUntilAtTime(0,1,0);
     }
@@ -1936,7 +2043,7 @@ void stopTaskCountdownJWS(){
 }
 
 //=========================================================================
-//==================================   Task Firebase Scheduler  ===========
+//==================================   SPIFFS  ============================
 //=========================================================================
 
 #define NASEHAT_COUNT_MAX 10
@@ -1949,8 +2056,11 @@ boolean appendFile(const char * text, const char * fileName, boolean overWrite){
       file = SPIFFS.open(fileName, FILE_WRITE);
     } else {
       if(overWrite){
-        SPIFFS.remove(fileName);
-        file = SPIFFS.open(fileName, FILE_WRITE);
+        if(SPIFFS.remove(fileName)){
+          file = SPIFFS.open(fileName, FILE_WRITE);
+        } else {
+          logln("file cannot be removed, why?");
+        }
       } else {
         file = SPIFFS.open(fileName, FILE_APPEND);
       }
@@ -1985,7 +2095,19 @@ std::array<String,NASEHAT_COUNT_MAX> readFile(const char * fileName){
   return stringResult;
 }
 
+void listAllFiles(){
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  while(file){
+      log("FILE: ");
+      logln(file.name());
+      file = root.openNextFile();
+  }
+}
 
+//=========================================================================
+//==================================   Task Firebase Scheduler  ===========
+//=========================================================================
 void setupDMDNasehat(const char * info){
   setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,info,true,"",false,Arial_Black_16,1000,10000,msDistanceFromNowToTime(23, 59, 0));
   setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
@@ -2000,7 +2122,7 @@ void taskFirebase(void * parameter){
   while (!isWiFiReady)
   {
     logln("Task Firebase nasehat waiting for wifi...");
-    delay(5000);
+    delay(20000);
   }
   
   FirebaseData fbdo;
@@ -2073,6 +2195,7 @@ void taskFirebase(void * parameter){
 
                 //appendFile(info,"/nasehat_firebase.txt",false);
               }
+
               isFirebaseReady = true;
               logln("Firebase get process...");
             } else {
@@ -2082,14 +2205,14 @@ void taskFirebase(void * parameter){
         }
       }
       
-      // if(!isFbReady && isFirebaseReady){
-      //   nasehatVector = readFile("/nasehat_firebase.txt");
-      //   for(int x=0; x<NASEHAT_COUNT_MAX; x++){
-      //     String info = nasehatVector.at(x);
-      //     Serial.println(info);
-      //     //setupDMDNasehat(info.c_str());
-      //   }
-      // }
+      if(!isFbReady && isFirebaseReady){
+        nasehatVector = readFile("/nasehat_firebase.txt");
+        for(int x=0; x<NASEHAT_COUNT_MAX; x++){
+          String info = nasehatVector.at(x);
+          Serial.println(info);
+          setupDMDNasehat(info.c_str());
+        }
+      }
     }
     xSemaphoreGive(mutex_con);
     if(!isFbReady){
@@ -2129,30 +2252,44 @@ void taskButtonTouch(void * parameter){
 
 
 //=========================================================================
-//==================================   SPIFFS  ============================
-//=========================================================================
-
-void listAllFiles(){
-  File root = SPIFFS.open("/");
-  File file = root.openNextFile();
-  while(file){
-      log("FILE: ");
-      logln(file.name());
-      file = root.openNextFile();
-  }
-}
-
-
-
-//=========================================================================
 //==================================   Main App  ==========================
 //=========================================================================
 void setup()
 {
-  pinMode(built_in_led, OUTPUT);
-
   Serial.begin(115200);
-  delay(1000); // give me time to bring up serial monitor
+  while(!Serial){
+    delay(1000);
+  }
+  
+  // esp_pm_config_esp32_t pmConfig;
+  // pmConfig.light_sleep_enable = true;
+  // pmConfig.max_freq_mhz = 240;
+  // pmConfig.min_freq_mhz = 80;
+  // esp_err_t result = esp_pm_configure(&pmConfig);
+  // switch (result)
+  // {
+  //   case ESP_OK:
+  //     Serial.println("configure pm success");
+  //     break;
+  //   default:
+  //     Serial.print("configure pm : ");
+  //     Serial.println(result);
+  //     break;
+  // }
+
+  //setCpuFrequencyMhz(240);
+  logf("Modem Sleep : %d", WiFi.getSleep());
+  logf("Freq CPU : %d", ESP.getCpuFreqMHz());
+  logf("Cores : %d", ESP.getChipCores());
+  logf("Chip Model : %s", ESP.getChipModel());
+  logf("CC : %d", ESP.getCycleCount());
+  logf("Free Heap : %d", ESP.getFreeHeap());
+  logf("Free Ram : %d", ESP.getFreePsram());
+  logf("SDK Version : %s", ESP.getSdkVersion());
+  logf("Sketch Size : %d", ESP.getSketchSize());
+
+
+  pinMode(built_in_led, OUTPUT);
 
   mutex_con = xSemaphoreCreateMutex(); 
   if (mutex_con == NULL) { 
@@ -2163,7 +2300,6 @@ void setup()
   if (mutex_dmd == NULL) { 
     logln("Mutex dmd can not be created"); 
   } 
-
  
   preferences.begin("settings", false);
   //ssid = preferences.getString("ssid","3mbd3vk1d-2");
