@@ -54,6 +54,7 @@ TaskHandle_t taskWebSocketHandle;
 SemaphoreHandle_t mutex_con;
 SemaphoreHandle_t mutex_dmd;
 SemaphoreHandle_t mutex_clock;
+SemaphoreHandle_t mutex_date;
 
 Preferences preferences;
 
@@ -296,7 +297,7 @@ std::array<unsigned long, 4>  getArrayOfTime(const char * time){
   char copied_time[9] = {'\0'};
 
   if(strlen(time) <= 6){
-    sprintf_P(copied_time, (PGM_P)F("%s:00"), copied_time);
+    sprintf_P(copied_time, (PGM_P)F("%s:00"), time);
   } else {
     sprintf_P(copied_time, (PGM_P)F("%s"), time);
   }
@@ -551,6 +552,7 @@ void setupDMD()
   wifi_mode_t mode = WiFi.getMode();
   if(mode == WIFI_MODE_STA){
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,15000);
+    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,type_jws,false,count_down_jws,false,System5x7,1000,10000);
   } else if(mode == WIFI_MODE_AP){
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"1. silakan connect ke wifi 'Speaker Murottal AP' dengan password 'qwerty654321'",false,"Cara Setup",false,System5x7,1000,5000);
     setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"2. Akses website http://speaker-murottal.local",false,"Cara Setup",false,System5x7,1000,5000);
@@ -684,8 +686,12 @@ void taskDMD(void *parameter)
                       posx += step;
                       if(posx >= ((32*DISPLAYS_ACROSS)-width)){
                         step = -1;
+                        message_full_displayed = true;
                       } else if(posx<=0){
                         step = 1;
+                        message_full_displayed = false;
+                      } else {
+                        message_full_displayed = false;
                       }
                     } else {
                       if(posx < (-1*width)){
@@ -1395,10 +1401,13 @@ void taskWebServer(void *parameter)
                 m = timeInfo[1];
                 s = timeInfo[2];
                 xSemaphoreGive(mutex_clock); 
-                isClockManual = true;
+                if(!isClockReady){
+                  isClockManual = true;
+                }
               } else if(server.hasArg("date")){
                 String date = server.arg("date");
                 std::array<uint16_t, 3> dateInfo = getArrayOfDate(date.c_str());
+                xSemaphoreTake(mutex_date, portMAX_DELAY);
                 day = dateInfo[2];
                 month = dateInfo[1];
                 year = dateInfo[0];
@@ -1408,6 +1417,7 @@ void taskWebServer(void *parameter)
                 hijri_year = server.arg("hijri_year").toInt();
                 String hijri_month_names[] = {"Muharam", "Safar", "Rabiul Awal", "Rabiul Akhir", "Jumadil Awal", "Jumadil Akhir", "Rajab", "Sya'ban", "Ramadhan", "Syawal", "Dzulqo'dah", "Dzulhijjah"};
                 sprintf_P(str_hijri_date, (PGM_P)F("%d %s %d"), hijri_day,hijri_month_names[hijri_month].c_str(), hijri_year);
+                xSemaphoreGive(mutex_date); 
               }
               server.sendHeader("Location", "/setting", true);
               server.send(302, "text/plain", "");
@@ -1569,19 +1579,9 @@ void taskClock(void * parameter)
   for (;;)
   {
     s = s + 1;
-    //show clock
-    if (h24 < 12)
-      type = "AM";
-    if (h24 == 12)
-      type = "PM";
-    if (h24 > 12)
-      type = "PM";
-    if (h24 == 24)
-      h24 = 0;
-    
     delay(1000);
-  
     xSemaphoreTake(mutex_clock, portMAX_DELAY); 
+    
     if (s == 60)
     {
       s = 0;
@@ -1597,7 +1597,15 @@ void taskClock(void * parameter)
     {
       h = 1;
     }
-    xSemaphoreGive(mutex_clock); 
+    if (h24 == 24)
+      h24 = 0;
+
+    // if (h24 < 12)
+    //   type = "AM";
+    // if (h24 == 12)
+    //   type = "PM";
+    // if (h24 > 12)
+    //   type = "PM";
 
     // log("Time : ");
     // log(timeinfo.tm_hour);
@@ -1605,15 +1613,17 @@ void taskClock(void * parameter)
     // log(m);
     // log(":");
     // logln(s);
+
     sprintf_P(str_clock_full, (PGM_P)F("%02d:%02d:%02d"), h24, m, s);
     isClockReady = true;
-    //logln(str_clock);
+
+    xSemaphoreGive(mutex_clock);
   }
 }
 
 
 const char * getJsonData(const char * link){
-
+  return NULL;
 }
 
 bool isKabisat(int year){
@@ -1659,10 +1669,12 @@ void taskDate(void * parameter)
         } else {
           Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
 
+          xSemaphoreTake(mutex_date, portMAX_DELAY);
           day = timeinfo.tm_mday;
           month = timeinfo.tm_mon; //0-11 since januari
           year = timeinfo.tm_year+1900;
           weekday = timeinfo.tm_wday;//0-6 since sunday
+          xSemaphoreGive(mutex_date);
 
           //get hijri date
           char link[140] = {'\0'};
@@ -1690,10 +1702,12 @@ void taskDate(void * parameter)
               isHijriOfflineMode = true;
             } else {
               const char * hijri_date = doc["tanggal_hijriyah"];
+              xSemaphoreTake(mutex_date, portMAX_DELAY);
               sprintf_P(str_hijri_date, (PGM_P)F("%s"), hijri_date);
               hijri_day = doc["hijri_tanggal"];
               hijri_month = doc["hijri_bulan"];
               hijri_year = doc["hijri_tahun"];
+              xSemaphoreGive(mutex_date);
             }
             
             doc.clear();
@@ -1720,6 +1734,7 @@ void taskDate(void * parameter)
           //31: 0,2,4,6,7,9,11
           //30: 3,5,8,10,12
           //28/29: 1
+          xSemaphoreTake(mutex_date, portMAX_DELAY);
           day++;
           if(day>=29){
             if(month==1){
@@ -1756,6 +1771,7 @@ void taskDate(void * parameter)
           if(weekday>=7){
             weekday=0;
           }   
+          xSemaphoreGive(mutex_date);
         }
 
         if(isHijriOfflineMode){
@@ -1791,7 +1807,7 @@ void taskDate(void * parameter)
     xSemaphoreGive(mutex_con);
     if(!isDateReady){
       logln("Task date waiting for wifi...");
-      delay(60000); //1 minutes
+      delay(35000); //35 seconds
     } else {
       delayMSUntilAtTime(0,1,0);
     }
@@ -1988,12 +2004,10 @@ void taskCountDownJWS(void * parameter){
     }
     seconds = leftSeconds;
 
-    log("Counter Countdown for ");
-    log(type_jws);
-    logf(" : %d ==> %d - %d - %d",counter,hours,minutes,seconds);
-
-
+    logf("Counter Countdown for %s : %d ==> %d - %d - %d",type_jws,counter,hours,minutes,seconds);
+    
     logf("Countdown JWS stack size : %d",uxTaskGetStackHighWaterMark(NULL));
+
     while(counter >= 0){
       if(seconds==-1){
         seconds=59;
@@ -2003,12 +2017,9 @@ void taskCountDownJWS(void * parameter){
         minutes=59;
         hours--;
       }
-      //display
+
       sprintf_P(count_down_jws, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-      //log("String Countdown : ");
-      //log(type_jws);
-      //log(" : ");
-      //logln(count_down_jws);
+      
       seconds--;
       counter--;
       delay(1000);
@@ -2302,6 +2313,11 @@ void setup()
   mutex_clock = xSemaphoreCreateMutex(); 
   if (mutex_clock == NULL) { 
     logln("Mutex clock can not be created"); 
+  } 
+
+  mutex_date = xSemaphoreCreateMutex(); 
+  if (mutex_date == NULL) { 
+    logln("Mutex date can not be created"); 
   } 
  
   preferences.begin("settings", false);
