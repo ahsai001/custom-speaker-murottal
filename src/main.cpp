@@ -53,6 +53,7 @@ TaskHandle_t taskWebSocketHandle;
 
 SemaphoreHandle_t mutex_con;
 SemaphoreHandle_t mutex_dmd;
+SemaphoreHandle_t mutex_clock;
 
 Preferences preferences;
 
@@ -1388,10 +1389,12 @@ void taskWebServer(void *parameter)
               } else if(server.hasArg("time")){
                 String time = server.arg("time");
                 std::array<unsigned long, 4> timeInfo = getArrayOfTime(time.c_str());
+                xSemaphoreTake(mutex_clock, portMAX_DELAY); 
                 h24 = timeInfo[0]; // 24 hours
                 h = h24 > 12 ? h24-12 : h24;
                 m = timeInfo[1];
                 s = timeInfo[2];
+                xSemaphoreGive(mutex_clock); 
                 isClockManual = true;
               } else if(server.hasArg("date")){
                 String date = server.arg("date");
@@ -1578,6 +1581,7 @@ void taskClock(void * parameter)
     
     delay(1000);
   
+    xSemaphoreTake(mutex_clock, portMAX_DELAY); 
     if (s == 60)
     {
       s = 0;
@@ -1593,7 +1597,7 @@ void taskClock(void * parameter)
     {
       h = 1;
     }
-
+    xSemaphoreGive(mutex_clock); 
 
     // log("Time : ");
     // log(timeinfo.tm_hour);
@@ -2293,6 +2297,11 @@ void setup()
   mutex_dmd = xSemaphoreCreateMutex(); 
   if (mutex_dmd == NULL) { 
     logln("Mutex dmd can not be created"); 
+  } 
+
+  mutex_clock = xSemaphoreCreateMutex(); 
+  if (mutex_clock == NULL) { 
+    logln("Mutex clock can not be created"); 
   } 
  
   preferences.begin("settings", false);
