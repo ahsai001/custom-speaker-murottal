@@ -62,9 +62,6 @@ volatile int h = 12; // hours in 12 format
 volatile int m = 0; //minutes
 volatile int s = 0; //seconds
 
-char * manual_time = NULL;
-char * manual_date = NULL;
-
 char str_clock_full[9] = "--:--:--"; //used by dmd task
 char str_date[26] = "------, -- --------- ----"; //used by dmd task
 char str_hijri_date[30] = "-- ------- ----- ----";
@@ -1390,7 +1387,11 @@ void taskWebServer(void *parameter)
                 showFlashMessage(info,true);
               } else if(server.hasArg("time")){
                 String time = server.arg("time");
-                manual_time = getAllocatedString(time.c_str());
+                std::array<unsigned long, 4> timeInfo = getArrayOfTime(time.c_str());
+                h24 = timeInfo[0]; // 24 hours
+                h = h24 > 12 ? h24-12 : h24;
+                m = timeInfo[1];
+                s = timeInfo[2];
                 isClockManual = true;
               } else if(server.hasArg("date")){
                 String date = server.arg("date");
@@ -1402,7 +1403,6 @@ void taskWebServer(void *parameter)
                 hijri_day = server.arg("hijri_day").toInt();
                 hijri_month = server.arg("hijri_month").toInt();
                 hijri_year = server.arg("hijri_year").toInt();
-
                 String hijri_month_names[] = {"Muharam", "Safar", "Rabiul Awal", "Rabiul Akhir", "Jumadil Awal", "Jumadil Akhir", "Rajab", "Sya'ban", "Ramadhan", "Syawal", "Dzulqo'dah", "Dzulhijjah"};
                 sprintf_P(str_hijri_date, (PGM_P)F("%d %s %d"), hijri_day,hijri_month_names[hijri_month], hijri_year);
               }
@@ -1556,12 +1556,6 @@ void taskClock(void * parameter)
   } 
   
   if(isClockManual){
-    std::array<unsigned long, 4> timeInfo = getArrayOfTime(manual_time);
-    free(manual_time);
-    h24 = timeInfo[0]; // 24 hours
-    h = h24 > 12 ? h24-12 : h24;
-    m = timeInfo[1];
-    s = timeInfo[2];
     isClockManual = false;
   }
 
