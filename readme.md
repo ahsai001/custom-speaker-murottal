@@ -6,3 +6,4 @@
 - bug ketika setting wifi dan forget wifi => done
 - bug ketika SPIFFS
 - dmd mati setelah durasi tertentu atau ketika wifi mati??
+- animation in & out => done

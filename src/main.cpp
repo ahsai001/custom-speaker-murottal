@@ -590,7 +590,105 @@ void drawTextCenter(const uint8_t * font, const char * str, int top){
     dmd.drawString(posX, top, str, strlen(str), GRAPHICS_NORMAL);
 }
 
+void drawTextCenter(const uint8_t * font, const char * str, int top, byte bGraphicsMode){
+    unsigned int length = stringWidth(font, str);
+    float posX = ((32 * DISPLAYS_ACROSS) - length)/2;
+    dmd.drawString(posX, top, str, strlen(str), bGraphicsMode);
+}
 
+
+void anim_in(DMD_Data * item){
+  int posy = 0;
+  int old_posy = 0;
+  int target = 0;
+  unsigned long start = millis();
+  unsigned long start2 = start;
+  bool isText1Done = true;
+  bool isText2Done = true;
+  dmd.selectFont(item->font);
+  switch (item->type) {
+      case DMD_TYPE_SCROLL_STATIC:
+        posy = 0-7-1;
+        old_posy = posy;
+        target = 1;
+        isText2Done = false;
+        break;
+      default:
+        break;
+  }
+  while(true){
+      if(need_reset_dmd_loop_index){
+        break;
+      }
+      if(isText1Done && isText2Done){
+        break;
+      }
+      switch (item->type) {
+          case DMD_TYPE_SCROLL_STATIC:
+              if (millis() - start2 > marquee_speed){
+                  drawTextCenter(item->font, item->text2, old_posy, GRAPHICS_NOR);
+                  drawTextCenter(item->font, item->text2, posy, GRAPHICS_OR);
+                  start2 = millis(); 
+                  if(!isText2Done){ 
+                    old_posy = posy;
+                    posy++;
+                    if(posy > target){
+                      isText2Done = true;
+                    }
+                  }
+              }
+              break;
+          default:
+              break;
+      }
+  }
+}
+void anim_out(DMD_Data * item){
+  int posy = 0;
+  int old_posy = 0;
+  int target = 0;
+  unsigned long start = millis();
+  unsigned long start2 = start;
+  bool isText1Done = true;
+  bool isText2Done = true;
+  dmd.selectFont(item->font);
+  switch (item->type) {
+      case DMD_TYPE_SCROLL_STATIC:
+        target = 0-7-1;
+        posy = 1;
+        old_posy = posy;
+        isText2Done = false;
+        break;
+      default:
+        break;
+  }
+  while(true){
+      if(need_reset_dmd_loop_index){
+        break;
+      }
+      if(isText1Done && isText2Done){
+        break;
+      }
+      switch (item->type) {
+          case DMD_TYPE_SCROLL_STATIC:
+              if (millis() - start2 > marquee_speed){
+                  drawTextCenter(item->font, item->text2, old_posy, GRAPHICS_NOR);
+                  drawTextCenter(item->font, item->text2, posy, GRAPHICS_OR);
+                  start2 = millis();
+                  if(!isText2Done){ 
+                    old_posy = posy;
+                    posy--;
+                    if(posy < target){
+                      isText2Done = true;
+                    }
+                  }
+              }
+              break;
+          default:
+              break;
+      }
+  }
+}
 
 void taskDMD(void *parameter)
 {
@@ -644,8 +742,9 @@ void taskDMD(void *parameter)
 
       logf("index : %d, type : %d, text1 : %s, text2 : %s, start_time : %lld, max_count : %d, life_time : %ld", dmd_loop_index, item->type, item->text1, item->text2, item->start_time_inMS, item->max_count, item->life_time_inMS);
 
-      //logln("go.................");
       dmd.clearScreen(true);
+      anim_in(item);
+      //logln("go.................");
       item->count++;
       while(start + item->duration_inMS > millis()){
         if(need_reset_dmd_loop_index){
@@ -656,9 +755,9 @@ void taskDMD(void *parameter)
         {
           case DMD_TYPE_SCROLL_STATIC:
             {
-              int counter = item->duration_inMS/1000;
+              int counter = item->duration_inMS/item->delay_inMS;
               unsigned long start = millis();
-              unsigned long timer = start;
+              unsigned long start2 = start;
               dmd.selectFont(item->font);
               int width = stringWidth(item->font,item->text1);
               int8_t step = 1;
@@ -668,7 +767,6 @@ void taskDMD(void *parameter)
               if(width <= (32*DISPLAYS_ACROSS)){
                   isBounce = true;
                   posx = 0;
-                  message_full_displayed = true;
               }
               while(counter >= 0 || !message_full_displayed){
                   if(need_reset_dmd_loop_index){
@@ -679,7 +777,7 @@ void taskDMD(void *parameter)
                     start = millis();
                     counter--;
                   }
-                  if (millis() - timer > marquee_speed){
+                  if (millis() - start2 > marquee_speed){
                     log("*");
                     dmd.drawString(posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                     if(isBounce){
@@ -702,7 +800,7 @@ void taskDMD(void *parameter)
                       }
                       posx--;
                     }
-                    timer = millis();
+                    start2 = millis();
                   }
               }
             }
@@ -716,24 +814,24 @@ void taskDMD(void *parameter)
               dmd.selectFont(item->font);
               dmd.drawMarquee(item->text1, strlen(item->text1), (32 * DISPLAYS_ACROSS) - 1, 1);
               unsigned long start = millis();
-              unsigned long timer = start;
+              unsigned long start2 = start;
               boolean ret = false;
               while (!ret){
                 if(need_reset_dmd_loop_index){
                   break;
                 }
-                if ((timer + marquee_speed) < millis())
+                if ((start2 + marquee_speed) < millis())
                 {
                   log("*");
                   ret = dmd.stepMarquee(-1, 0);
-                  timer = millis();
+                  start2 = millis();
                 }
               }
             }
             break;
           case DMD_TYPE_SCROLL_COUNTDOWN: //count down timer
             {
-              int counter = item->duration_inMS/1000;
+              int counter = item->duration_inMS/item->delay_inMS;
               int leftSeconds = counter;
               int hours = leftSeconds/3600;
               int minutes = 0;
@@ -750,7 +848,7 @@ void taskDMD(void *parameter)
               dmd.selectFont(item->font);
               
               unsigned long start = millis();
-              unsigned long timer = start;
+              unsigned long start2 = start;
               int width = stringWidth(item->font,item->text1);
               int posx = (32*DISPLAYS_ACROSS) - 1;
               bool message_full_displayed = false;
@@ -777,7 +875,7 @@ void taskDMD(void *parameter)
                   start = millis();
                 }
 
-                if (millis() - timer > marquee_speed){
+                if (millis() - start2 > marquee_speed){
                   log("*");
                   dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                   if(posx < (-1*width)){
@@ -786,7 +884,7 @@ void taskDMD(void *parameter)
                   } else {
                     message_full_displayed = false;
                   }
-                  timer = millis();
+                  start2 = millis();
                 }
               }
             }
@@ -801,7 +899,7 @@ void taskDMD(void *parameter)
               dmd.selectFont(item->font);
               
               unsigned long start = millis();
-              unsigned long timer = start;
+              unsigned long start2 = start;
               int width = stringWidth(item->font,item->text1);
               int posx = (32*DISPLAYS_ACROSS) - 1;
               int countup = 0;
@@ -828,7 +926,7 @@ void taskDMD(void *parameter)
                   start = millis();
                 }
 
-                if (millis() - timer > marquee_speed){
+                if (millis() - start2 > marquee_speed){
                   log("*");
                   dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
                   if(posx < (-1*width)){
@@ -837,7 +935,7 @@ void taskDMD(void *parameter)
                   } else {
                     message_full_displayed = true;
                   }
-                  timer = millis();
+                  start2 = millis();
                 }
               }
             }
@@ -848,6 +946,7 @@ void taskDMD(void *parameter)
         logln("*");
         delay(item->delay_inMS);
       } //end while
+      anim_out(item);
     } //end for
     
 
