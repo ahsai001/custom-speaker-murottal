@@ -584,18 +584,33 @@ unsigned int stringWidth(const uint8_t *font, const char * str){
   return width;
 }
 
-void drawTextCenter(const uint8_t * font, const char * str, int top){
+uint8_t stringHeight(const uint8_t *font){
+  return pgm_read_byte(font + FONT_HEIGHT);
+}
+
+int drawTextCenter(const uint8_t * font, const char * str, int top){
     unsigned int length = stringWidth(font, str);
-    float posX = ((32 * DISPLAYS_ACROSS) - length)/2;
+    int posX = ((32 * DISPLAYS_ACROSS) - length)/2;
     dmd.drawString(posX, top, str, strlen(str), GRAPHICS_NORMAL);
+    return posX;
 }
 
-void drawTextCenter(const uint8_t * font, const char * str, int top, byte bGraphicsMode){
+int drawTextCenter(const uint8_t * font, const char * str, int top, byte bGraphicsMode){
     unsigned int length = stringWidth(font, str);
-    float posX = ((32 * DISPLAYS_ACROSS) - length)/2;
+    int posX = ((32 * DISPLAYS_ACROSS) - length)/2;
     dmd.drawString(posX, top, str, strlen(str), bGraphicsMode);
+    return posX;
 }
 
+void clearLine(int x1, int y1, int x2, int y2){
+  dmd.drawLine(x1,y1,x2,y2,GRAPHICS_INVERSE);
+}
+void clearBox(int x1, int y1, int x2, int y2){
+  dmd.drawBox(x1,y1,x2,y2,GRAPHICS_INVERSE);
+}
+void clearFilledBox(int x1, int y1, int x2, int y2){
+  dmd.drawFilledBox(x1,y1,x2,y2,GRAPHICS_INVERSE);
+}
 
 void anim_in(DMD_Data * item){
   int posy = 0;
@@ -608,8 +623,10 @@ void anim_in(DMD_Data * item){
   dmd.selectFont(item->font);
   switch (item->type) {
       case DMD_TYPE_SCROLL_STATIC:
+      case DMD_TYPE_SCROLL_COUNTDOWN:
+      case DMD_TYPE_SCROLL_COUNTUP:
         posy = 0-7-1;
-        old_posy = posy;
+        old_posy = posy-1;
         target = 1;
         isText2Done = false;
         break;
@@ -625,9 +642,12 @@ void anim_in(DMD_Data * item){
       }
       switch (item->type) {
           case DMD_TYPE_SCROLL_STATIC:
+          case DMD_TYPE_SCROLL_COUNTDOWN:
+          case DMD_TYPE_SCROLL_COUNTUP:
               if (millis() - start2 > marquee_speed){
-                  drawTextCenter(item->font, item->text2, old_posy, GRAPHICS_NOR);
-                  drawTextCenter(item->font, item->text2, posy, GRAPHICS_OR);
+                  int posx = drawTextCenter(item->font, item->text2, posy, GRAPHICS_NORMAL);
+                  int strWidth = stringWidth(item->font, item->text2);
+                  clearLine(posx,old_posy, posx+strWidth-1,old_posy);
                   start2 = millis(); 
                   if(!isText2Done){ 
                     old_posy = posy;
@@ -654,9 +674,11 @@ void anim_out(DMD_Data * item){
   dmd.selectFont(item->font);
   switch (item->type) {
       case DMD_TYPE_SCROLL_STATIC:
+      case DMD_TYPE_SCROLL_COUNTDOWN:
+      case DMD_TYPE_SCROLL_COUNTUP:
         target = 0-7-1;
         posy = 1;
-        old_posy = posy;
+        old_posy = posy+1;
         isText2Done = false;
         break;
       default:
@@ -671,9 +693,13 @@ void anim_out(DMD_Data * item){
       }
       switch (item->type) {
           case DMD_TYPE_SCROLL_STATIC:
+          case DMD_TYPE_SCROLL_COUNTDOWN:
+          case DMD_TYPE_SCROLL_COUNTUP:
               if (millis() - start2 > marquee_speed){
-                  drawTextCenter(item->font, item->text2, old_posy, GRAPHICS_NOR);
-                  drawTextCenter(item->font, item->text2, posy, GRAPHICS_OR);
+                  int posx = drawTextCenter(item->font, item->text2, posy, GRAPHICS_NORMAL);
+                  int strWidth = stringWidth(item->font, item->text2);
+                  int strHeight = stringHeight(item->font);
+                  clearLine(posx,posy+strHeight, posx+strWidth-1,posy+strHeight);
                   start2 = millis();
                   if(!isText2Done){ 
                     old_posy = posy;
