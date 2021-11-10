@@ -25,20 +25,18 @@
 #include <Preferences.h>
 //#include <FirebaseFS.h>
 #include <FirebaseESP32.h>
-//Provide the token generation process info.
+// Provide the token generation process info.
 #include "addons/TokenHelper.h"
-//Provide the RTDB payload printing info and other helper functions.
+// Provide the RTDB payload printing info and other helper functions.
 //#include "addons/RTDBHelper.h"
 //#include "esp_pm.h"
-
-
+#include "OneButton.h"
 
 //=========================================================================
 //============================= Global Declarations =======================
 //=========================================================================
 
-
-//section code : DMD, toggle led, wifi alive, web server, Clock, JWS
+// section code : DMD, toggle led, wifi alive, web server, Clock, JWS
 TaskHandle_t taskLEDHandle;
 TaskHandle_t taskWebHandle;
 TaskHandle_t taskKeepWiFiHandle;
@@ -59,13 +57,13 @@ SemaphoreHandle_t mutex_date;
 Preferences preferences;
 
 bool isClockManual = false;
-volatile int h24 = 12; //hours in 24 format
-volatile int h = 12; // hours in 12 format
-volatile int m = 0; //minutes
-volatile int s = 0; //seconds
+volatile int h24 = 12; // hours in 24 format
+volatile int h = 12;   // hours in 12 format
+volatile int m = 0;    // minutes
+volatile int s = 0;    // seconds
 
-char str_clock_full[9] = "--:--:--"; //used by dmd task
-char str_date[26] = "------, -- --------- ----"; //used by dmd task
+char str_clock_full[9] = "--:--:--";             // used by dmd task
+char str_date[26] = "------, -- --------- ----"; // used by dmd task
 char str_hijri_date[30] = "-- ------- ----- ----";
 char str_date_full[55] = "";
 // char timeDay[3];
@@ -78,7 +76,6 @@ volatile int weekday = -1;
 volatile int hijri_day = -1;
 volatile int hijri_month = -1;
 volatile int hijri_year = -1;
-
 
 volatile bool isWiFiReady = false;
 volatile bool isClockReady = false;
@@ -101,189 +98,207 @@ char data_jadwal_ashar[9];
 char data_jadwal_maghrib[9];
 char data_jadwal_isya[9];
 
-char type_jws[8] = "sholat"; //subuh, dzuhur, ashar, maghrib, isya
-char count_down_jws[9] = "--:--:--"; //04:30:00
+char type_jws[8] = "sholat";         // subuh, dzuhur, ashar, maghrib, isya
+char count_down_jws[9] = "--:--:--"; // 04:30:00
 
-//22.30 - 23.45 : 1 jam + 15 menit
-//22.30 - 23.15 : 1 jam + -15 menit
-//22.30 - 22.45 : 0 jam + 15 menit
-//22.30 - 22.15 : 0 jam + -15 menit + 24 jam
-//22.30 - 01.45 : -21 jam + 15 menit + 24 jam
-//22.30 - 01.15 : -21 jam + -15 menit + 24 jam
+// 22.30 - 23.45 : 1 jam + 15 menit
+// 22.30 - 23.15 : 1 jam + -15 menit
+// 22.30 - 22.45 : 0 jam + 15 menit
+// 22.30 - 22.15 : 0 jam + -15 menit + 24 jam
+// 22.30 - 01.45 : -21 jam + 15 menit + 24 jam
+// 22.30 - 01.15 : -21 jam + -15 menit + 24 jam
 
 //================================================================================
 //==================================   Task Web Socket Server  ===================
 //================================================================================
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-void log(const char * message){
+void log(const char *message)
+{
   size_t len = strlen(message);
   Serial.print(message);
-  if(isWebSocketReady){
+  if (isWebSocketReady)
+  {
     webSocket.broadcastTXT(message, len);
   }
 }
 
-
-void logln(const char * message){
+void logln(const char *message)
+{
   log(message);
   Serial.println();
-  if(isWebSocketReady){
-    webSocket.broadcastTXT("<br>",4);
+  if (isWebSocketReady)
+  {
+    webSocket.broadcastTXT("<br>", 4);
   }
 }
 
-void logf(const char *format, ...){
+void logf(const char *format, ...)
+{
   char loc_buf[128];
-  char * temp = loc_buf;
+  char *temp = loc_buf;
   va_list arg;
   va_list copy;
   va_start(arg, format);
   va_copy(copy, arg);
   int len = vsnprintf(temp, sizeof(loc_buf), format, copy);
   va_end(copy);
-  if(len < 0) {
+  if (len < 0)
+  {
+    va_end(arg);
+    return;
+  };
+  if (len >= sizeof(loc_buf))
+  {
+    temp = (char *)malloc(len + 1);
+    temp[len] = '\0';
+    if (temp == NULL)
+    {
       va_end(arg);
       return;
-  };
-  if(len >= sizeof(loc_buf)){
-      temp = (char*) malloc(len+1);
-      temp[len] = '\0';
-      if(temp == NULL) {
-          va_end(arg);
-          return;
-      }
-      len = vsnprintf(temp, len+1, format, arg);
+    }
+    len = vsnprintf(temp, len + 1, format, arg);
   }
   va_end(arg);
 
   logln(temp);
 
-  if(temp != loc_buf){
-      free(temp);
+  if (temp != loc_buf)
+  {
+    free(temp);
   }
 }
 
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-    switch(type) {
-        case WStype_DISCONNECTED:
-            Serial.printf("[%u] Disconnected!\n", num);
-            break;
-        case WStype_CONNECTED:
-            {
-                IPAddress ip = webSocket.remoteIP(num);
-                Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length)
+{
+  switch (type)
+  {
+  case WStype_DISCONNECTED:
+    Serial.printf("[%u] Disconnected!\n", num);
+    break;
+  case WStype_CONNECTED:
+  {
+    IPAddress ip = webSocket.remoteIP(num);
+    Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
 
-				        // send message to client
-				        webSocket.sendTXT(num, "Connected");
-            }
-            break;
-        case WStype_TEXT:
-            Serial.printf("[%u] get Text: %s\n", num, payload);
+    // send message to client
+    webSocket.sendTXT(num, "Connected");
+  }
+  break;
+  case WStype_TEXT:
+    Serial.printf("[%u] get Text: %s\n", num, payload);
 
-            // send message to client
-            webSocket.sendTXT(num, "Command Received : OK");
+    // send message to client
+    webSocket.sendTXT(num, "Command Received : OK");
 
-            // send data to all connected clients
-            // webSocket.broadcastTXT("message here");
-            break;
-        case WStype_BIN:
-            Serial.printf("[%u] get binary length: %u\n", num, length);
-            //hexdump(payload, length);
+    // send data to all connected clients
+    // webSocket.broadcastTXT("message here");
+    break;
+  case WStype_BIN:
+    Serial.printf("[%u] get binary length: %u\n", num, length);
+    // hexdump(payload, length);
 
-            // send message to client
-            // webSocket.sendBIN(num, payload, length);
-            break;
-		case WStype_ERROR:			
-		case WStype_FRAGMENT_TEXT_START:
-		case WStype_FRAGMENT_BIN_START:
-		case WStype_FRAGMENT:
-		case WStype_FRAGMENT_FIN:
-			break;
-    }
+    // send message to client
+    // webSocket.sendBIN(num, payload, length);
+    break;
+  case WStype_ERROR:
+  case WStype_FRAGMENT_TEXT_START:
+  case WStype_FRAGMENT_BIN_START:
+  case WStype_FRAGMENT:
+  case WStype_FRAGMENT_FIN:
+    break;
+  }
 }
 
-void taskWebSocketServer(void * paramater){
+void taskWebSocketServer(void *paramater)
+{
   isWebSocketReady = false;
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
   isWebSocketReady = true;
   logln("Web Socket server started");
   logf("Web socket stack size : %d", uxTaskGetStackHighWaterMark(NULL));
-  for(;;){
+  for (;;)
+  {
     webSocket.loop();
     delay(1000);
   }
 }
 
-
-
-char * getAllocatedString(String text){
-  unsigned int length = text.length()+1;
-  char * allocatedString = (char *)malloc(sizeof(char)*(length));
-  //memset(allocatedString,'\0',sizeof(char)*length);
+char *getAllocatedString(String text)
+{
+  unsigned int length = text.length() + 1;
+  char *allocatedString = (char *)malloc(sizeof(char) * (length));
+  // memset(allocatedString,'\0',sizeof(char)*length);
   sprintf_P(allocatedString, (PGM_P)F("%s"), text.c_str());
-  allocatedString[length-1] = '\0';
+  allocatedString[length - 1] = '\0';
   return allocatedString;
 }
 
-long long sDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
-    long long deltaInSecond = ((hours-h24)*3600) + ((minutes-m)*60) + seconds-s;
-    if(deltaInSecond <= 0){
-      deltaInSecond += 24*3600;
-    }
-    return deltaInSecond;
+long long sDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds)
+{
+  long long deltaInSecond = ((hours - h24) * 3600) + ((minutes - m) * 60) + seconds - s;
+  if (deltaInSecond <= 0)
+  {
+    deltaInSecond += 24 * 3600;
+  }
+  return deltaInSecond;
 }
 
-long long msDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
+long long msDistanceFromNowToTime(uint8_t hours, uint8_t minutes, uint8_t seconds)
+{
   return sDistanceFromNowToTime(hours, minutes, seconds) * 1000;
 }
 
-long long sDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
-    long long deltaInSecond = ((thours-fhours)*3600) + ((tminutes-fminutes)*60) + (tseconds-fseconds);
-    if(deltaInSecond <= 0){
-      deltaInSecond += 24*3600;
-    }
-    return deltaInSecond;
+long long sDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds)
+{
+  long long deltaInSecond = ((thours - fhours) * 3600) + ((tminutes - fminutes) * 60) + (tseconds - fseconds);
+  if (deltaInSecond <= 0)
+  {
+    deltaInSecond += 24 * 3600;
+  }
+  return deltaInSecond;
 }
 
-long long msDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
-    return sDistanceFromTimeToTime(fhours, fminutes, fseconds, thours, tminutes, tseconds)*1000;
+long long msDistanceFromTimeToTime(uint8_t fhours, uint8_t fminutes, uint8_t fseconds, uint8_t thours, uint8_t tminutes, uint8_t tseconds)
+{
+  return sDistanceFromTimeToTime(fhours, fminutes, fseconds, thours, tminutes, tseconds) * 1000;
 }
 
+std::array<long long, 2> sDistanceFromDayTimeToDayTime(int16_t fdays, uint8_t fhours, uint8_t fminutes, uint8_t fseconds, int16_t tdays, uint8_t thours, uint8_t tminutes, uint8_t tseconds)
+{
+  // now is day 0, fdays=1 means tomorrow, fdays=2 means the day after tomorrow
+  std::array<long long, 2> result;
+  // 1, 9:00:00 ==> 5, 8:30:00
+  // 5, 9:00:00 ==> 5, 8:30:00
+  // 2, 9:00:00 ==> 2, 8:00:00
+  //-1, 9:00:00 ==> 0, 22:00:00 ==> 0, 23:00:00
+  long long deltaInSecond = 0;
+  deltaInSecond += (tdays - fdays - 1) * 24 * 3600;
+  deltaInSecond += sDistanceFromTimeToTime(fhours, fminutes, fseconds, 24, 0, 0);
+  deltaInSecond += sDistanceFromTimeToTime(0, 0, 0, thours, tminutes, tseconds);
+  result[1] = deltaInSecond; // distance from 'from' to 'to'
 
-std::array<long long, 2> sDistanceFromDayTimeToDayTime(int16_t fdays, uint8_t fhours, uint8_t fminutes, uint8_t fseconds, int16_t tdays, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
-    //now is day 0, fdays=1 means tomorrow, fdays=2 means the day after tomorrow
-    std::array<long long,2> result;
-    //1, 9:00:00 ==> 5, 8:30:00
-    //5, 9:00:00 ==> 5, 8:30:00
-    //2, 9:00:00 ==> 2, 8:00:00
-    //-1, 9:00:00 ==> 0, 22:00:00 ==> 0, 23:00:00
-    long long deltaInSecond = 0;
-    deltaInSecond += (tdays-fdays-1)*24*3600;
-    deltaInSecond += sDistanceFromTimeToTime(fhours,fminutes,fseconds,24,0,0);
-    deltaInSecond += sDistanceFromTimeToTime(0,0,0,thours,tminutes,tseconds);
-    result[1] = deltaInSecond; //distance from 'from' to 'to'
-
-    deltaInSecond = 0;
-    deltaInSecond += (fdays-0-1)*24*3600; //-48 jam + 2 jam + 9 jam = -37
-    deltaInSecond += sDistanceFromTimeToTime(h24,m,s,24,0,0); 
-    deltaInSecond += sDistanceFromTimeToTime(0,0,0,fhours,fminutes,fseconds);
-    result[0] = deltaInSecond; //distance from 'now' to 'from'
-    return result;
+  deltaInSecond = 0;
+  deltaInSecond += (fdays - 0 - 1) * 24 * 3600; //-48 jam + 2 jam + 9 jam = -37
+  deltaInSecond += sDistanceFromTimeToTime(h24, m, s, 24, 0, 0);
+  deltaInSecond += sDistanceFromTimeToTime(0, 0, 0, fhours, fminutes, fseconds);
+  result[0] = deltaInSecond; // distance from 'now' to 'from'
+  return result;
 }
 
-
-std::array<long long, 2> msDistanceFromDayTimeToDayTime(int16_t fdays, uint8_t fhours, uint8_t fminutes, uint8_t fseconds, int16_t tdays, uint8_t thours, uint8_t tminutes, uint8_t tseconds){
-  std::array<long long, 2> sDistance = sDistanceFromDayTimeToDayTime(fdays,fhours, fminutes, fseconds, tdays, thours,tminutes, tseconds);
+std::array<long long, 2> msDistanceFromDayTimeToDayTime(int16_t fdays, uint8_t fhours, uint8_t fminutes, uint8_t fseconds, int16_t tdays, uint8_t thours, uint8_t tminutes, uint8_t tseconds)
+{
+  std::array<long long, 2> sDistance = sDistanceFromDayTimeToDayTime(fdays, fhours, fminutes, fseconds, tdays, thours, tminutes, tseconds);
   std::array<long long, 2> msDistance;
-  msDistance[0] = sDistance[0]*1000;
-  msDistance[1] = sDistance[1]*1000;
+  msDistance[0] = sDistance[0] * 1000;
+  msDistance[1] = sDistance[1] * 1000;
   return msDistance;
 }
 
-void delayMSUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
-    delay(msDistanceFromNowToTime(hours, minutes, seconds));
+void delayMSUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds)
+{
+  delay(msDistanceFromNowToTime(hours, minutes, seconds));
 }
 
 // void eraseNVS(){
@@ -293,25 +308,30 @@ void delayMSUntilAtTime(uint8_t hours, uint8_t minutes, uint8_t seconds){
 //   while(true);
 // }
 
-std::array<unsigned long, 4>  getArrayOfTime(const char * time){
+std::array<unsigned long, 4> getArrayOfTime(const char *time)
+{
   char copied_time[9] = {'\0'};
 
-  if(strlen(time) <= 6){
+  if (strlen(time) <= 6)
+  {
     sprintf_P(copied_time, (PGM_P)F("%s:00"), time);
-  } else {
+  }
+  else
+  {
     sprintf_P(copied_time, (PGM_P)F("%s"), time);
   }
 
   const char delimiter[2] = ":";
-  char * token = strtok(copied_time, delimiter);
+  char *token = strtok(copied_time, delimiter);
   std::array<unsigned long, 4> as;
   int index = 0;
-  while( token != NULL ) {
-      as[index] = atoi(token);
-      index++;
-      token = strtok(NULL, delimiter);
+  while (token != NULL)
+  {
+    as[index] = atoi(token);
+    index++;
+    token = strtok(NULL, delimiter);
   }
-  as[3] = (as[0]*3600)+(as[1]*60)+as[2];
+  as[3] = (as[0] * 3600) + (as[1] * 60) + as[2];
   // log("=>");
   // log(as[0]);
   // log("-");
@@ -323,18 +343,20 @@ std::array<unsigned long, 4>  getArrayOfTime(const char * time){
   return as;
 }
 
-std::array<uint16_t, 3>  getArrayOfDate(const char * date){
+std::array<uint16_t, 3> getArrayOfDate(const char *date)
+{
   char copied_date[11] = {'\0'};
   sprintf_P(copied_date, (PGM_P)F("%s"), date);
 
   const char delimiter[2] = "-";
-  char * token = strtok(copied_date, delimiter);
+  char *token = strtok(copied_date, delimiter);
   std::array<uint16_t, 3> as;
   int index = 0;
-  while( token != NULL ) {
-      as[index] = atoi(token);
-      index++;
-      token = strtok(NULL, delimiter);
+  while (token != NULL)
+  {
+    as[index] = atoi(token);
+    index++;
+    token = strtok(NULL, delimiter);
   }
   return as;
 }
@@ -350,30 +372,36 @@ std::array<uint16_t, 3>  getArrayOfDate(const char * date){
 #define DMD_DATA_REGULER_INDEX 6
 #define DMD_DATA_FREE_INDEX DMD_DATA_SIZE
 
-enum DMDType {
-  DMD_TYPE_SCROLL_STATIC, DMD_TYPE_STATIC_STATIC, DMD_TYPE_SCROLL, DMD_TYPE_SCROLL_COUNTDOWN, DMD_TYPE_SCROLL_COUNTUP
+enum DMDType
+{
+  DMD_TYPE_SCROLL_STATIC,
+  DMD_TYPE_STATIC_STATIC,
+  DMD_TYPE_SCROLL,
+  DMD_TYPE_SCROLL_COUNTDOWN,
+  DMD_TYPE_SCROLL_COUNTUP
 };
 
-struct DMD_Data{
-  int type = -1; //0:datetime, 1:jws, 2:scrollingtext, 3:countdown, 4:countup
-  char * text1 = NULL;
+struct DMD_Data
+{
+  int type = -1; // 0:datetime, 1:jws, 2:scrollingtext, 3:countdown, 4:countup
+  char *text1 = NULL;
   uint8_t speed1 = 0;
   bool need_free_text1 = false;
-  char * text2 = NULL;
+  char *text2 = NULL;
   uint8_t speed2 = 0;
   bool need_free_text2 = false;
-  const uint8_t * font;
-  unsigned long delay_inMS = 0; //delay refresh dalam setiap kemunculan
-  unsigned long duration_inMS = 0; //durasi setiap kemunculan
-  int max_count = 1; //jumlah kemunculan, -1 for unlimited
-  int count = 0; //by code
+  const uint8_t *font;
+  unsigned long delay_inMS = 0;     // delay refresh dalam setiap kemunculan
+  unsigned long duration_inMS = 0;  // durasi setiap kemunculan
+  int max_count = 1;                // jumlah kemunculan, -1 for unlimited
+  int count = 0;                    // by code
   unsigned long life_time_inMS = 0; // in ms
-  long long start_time_inMS = 0; //by code
+  long long start_time_inMS = 0;    // by code
 };
 
 bool need_reset_dmd_loop_index = false;
-int dmd_loop_index = 0; //we can change this runtime
-struct DMD_Data dmd_data_list[DMD_DATA_SIZE]; //index 0 - 5 for important message
+int dmd_loop_index = 0;                       // we can change this runtime
+struct DMD_Data dmd_data_list[DMD_DATA_SIZE]; // index 0 - 5 for important message
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN);
 
 hw_timer_t *timer = NULL;
@@ -383,8 +411,8 @@ void IRAM_ATTR triggerScan()
   dmd.scanDisplayBySPI();
 }
 
-
-void marqueeText(const uint8_t *font, const char * text, int top){
+void marqueeText(const uint8_t *font, const char *text, int top)
+{
   dmd.selectFont(font);
   dmd.drawMarquee(text, strlen(text), (32 * DISPLAYS_ACROSS) - 1, top);
   unsigned long start = millis();
@@ -400,49 +428,61 @@ void marqueeText(const uint8_t *font, const char * text, int top){
   }
 }
 
-void  resetDMDLoopIndex(){ //use this function to make show important message right now
+void resetDMDLoopIndex()
+{ // use this function to make show important message right now
   need_reset_dmd_loop_index = true;
 }
 
-uint8_t getAvailableDMDIndex(bool isImportant, uint8_t reservedIndex){
+uint8_t getAvailableDMDIndex(bool isImportant, uint8_t reservedIndex)
+{
   uint8_t choosenIndex = 0;
-  if(reservedIndex >= DMD_DATA_SIZE){
-    if(isImportant){
+  if (reservedIndex >= DMD_DATA_SIZE)
+  {
+    if (isImportant)
+    {
       choosenIndex = DMD_DATA_IMPORTANT_INDEX;
-    } else {
+    }
+    else
+    {
       choosenIndex = DMD_DATA_REGULER_INDEX;
     }
-  } else {
+  }
+  else
+  {
     choosenIndex = reservedIndex;
   }
   bool full = false;
-  while(dmd_data_list[choosenIndex].type >= 0 && !full){
+  while (dmd_data_list[choosenIndex].type >= 0 && !full)
+  {
     choosenIndex++;
-    if(choosenIndex >= DMD_DATA_SIZE){
+    if (choosenIndex >= DMD_DATA_SIZE)
+    {
       full = true;
     }
   }
   return choosenIndex;
 }
 
-//show with custom
-void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, uint8_t speed1, bool need_free_text1, const char * text2, uint8_t speed2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, long long start_time_inMS){
+// show with custom
+void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const char *text1, uint8_t speed1, bool need_free_text1, const char *text2, uint8_t speed2, bool need_free_text2, const uint8_t *font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, unsigned long life_time_inMS, long long start_time_inMS)
+{
   logln("dmd wait.....");
-  xSemaphoreTake(mutex_dmd, portMAX_DELAY); 
+  xSemaphoreTake(mutex_dmd, portMAX_DELAY);
   logln("dmd start.....");
   uint8_t index = getAvailableDMDIndex(isImportant, reservedIndex);
-  
-  if(index >= DMD_DATA_SIZE){
+
+  if (index >= DMD_DATA_SIZE)
+  {
     logln("DMD slot is full");
-    xSemaphoreGive(mutex_dmd); 
+    xSemaphoreGive(mutex_dmd);
     return;
   }
-  
+
   dmd_data_list[index].type = type;
-  dmd_data_list[index].text1 = (char*)text1;
+  dmd_data_list[index].text1 = (char *)text1;
   dmd_data_list[index].speed1 = speed1;
   dmd_data_list[index].need_free_text1 = need_free_text1;
-  dmd_data_list[index].text2 = (char*)text2;
+  dmd_data_list[index].text2 = (char *)text2;
   dmd_data_list[index].speed2 = speed2;
   dmd_data_list[index].need_free_text2 = need_free_text2;
   dmd_data_list[index].font = font;
@@ -452,20 +492,23 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
   dmd_data_list[index].count = 0;
   dmd_data_list[index].life_time_inMS = life_time_inMS;
   dmd_data_list[index].start_time_inMS = start_time_inMS;
-  
-  logf("%s : %s,index : %d,type : %d,max_count : %d,life_time : %ld", text1,text2,index,type,max_count,life_time_inMS);
+
+  logf("%s : %s,index : %d,type : %d,max_count : %d,life_time : %ld", text1, text2, index, type, max_count, life_time_inMS);
 
   logln("dmd done .....");
-  xSemaphoreGive(mutex_dmd); 
+  xSemaphoreGive(mutex_dmd);
 }
 
-void resetDMDData(uint8_t index){
-  DMD_Data * item = dmd_data_list+index;
-  if(item->type >= 0 && item->need_free_text1){
+void resetDMDData(uint8_t index)
+{
+  DMD_Data *item = dmd_data_list + index;
+  if (item->type >= 0 && item->need_free_text1)
+  {
     free(item->text1);
     item->text1 = NULL;
   }
-  if(item->type >= 0 && item->need_free_text2){
+  if (item->type >= 0 && item->need_free_text2)
+  {
     free(item->text2);
     item->text2 = NULL;
   }
@@ -483,55 +526,62 @@ void resetDMDData(uint8_t index){
   item->start_time_inMS = 0;
 }
 
-void showFlashMessage(const char * text, bool need_free_text){
+void showFlashMessage(const char *text, bool need_free_text)
+{
   resetDMDData(DMD_DATA_FLASH_INDEX);
-  setupDMDdata(true,DMD_DATA_FLASH_INDEX,DMD_TYPE_SCROLL,text,0,need_free_text,"",0,false, Arial_Black_16,1000,4000,1,0,0);
+  setupDMDdata(true, DMD_DATA_FLASH_INDEX, DMD_TYPE_SCROLL, text, 0, need_free_text, "", 0, false, Arial_Black_16, 1000, 4000, 1, 0, 0);
   resetDMDLoopIndex();
 }
 
-
-//show at exact range time
-void setupDMDAtExactRangeTime(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS,  int16_t start_day, const char * start_time, int16_t end_day, const char * end_time /*09:10:23*/){
+// show at exact range time
+void setupDMDAtExactRangeTime(bool isImportant, uint8_t reservedIndex, DMDType type, const char *text1, bool need_free_text1, const char *text2, bool need_free_text2, const uint8_t *font, unsigned long delay_inMS, unsigned long duration_inMS, int16_t start_day, const char *start_time, int16_t end_day, const char *end_time /*09:10:23*/)
+{
   std::array<unsigned long, 4> start_time_info = getArrayOfTime(start_time);
   std::array<unsigned long, 4> end_time_info = getArrayOfTime(end_time);
-  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(start_day,start_time_info[0],start_time_info[1],start_time_info[2],end_day, end_time_info[0],end_time_info[1],end_time_info[2]);
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1, distance_info[1], millis()+distance_info[0]);
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(start_day, start_time_info[0], start_time_info[1], start_time_info[2], end_day, end_time_info[0], end_time_info[1], end_time_info[2]);
+  setupDMDdata(isImportant, reservedIndex, type, text1, 0, need_free_text1, text2, 0, need_free_text2, font, delay_inMS, duration_inMS, -1, distance_info[1], millis() + distance_info[0]);
 }
 
-//show at exact time for iteration
-void setupDMDAtExactTimeForIteration(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, int16_t day, const char * exact_time /*09:10:23*/){
+// show at exact time for iteration
+void setupDMDAtExactTimeForIteration(bool isImportant, uint8_t reservedIndex, DMDType type, const char *text1, bool need_free_text1, const char *text2, bool need_free_text2, const uint8_t *font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count, int16_t day, const char *exact_time /*09:10:23*/)
+{
   std::array<unsigned long, 4> timeInfo = getArrayOfTime(exact_time);
-  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(day,timeInfo[0],timeInfo[1],timeInfo[2],day,timeInfo[0],timeInfo[1],timeInfo[2]);
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count, 0, millis()+distance_info[0]);
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(day, timeInfo[0], timeInfo[1], timeInfo[2], day, timeInfo[0], timeInfo[1], timeInfo[2]);
+  setupDMDdata(isImportant, reservedIndex, type, text1, 0, need_free_text1, text2, 0, need_free_text2, font, delay_inMS, duration_inMS, max_count, 0, millis() + distance_info[0]);
 }
 
-//show at exact time for some life time
-void setupDMDAtExactTimeForLifeTime(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, unsigned long life_time_inMS, int16_t day, const char * exact_time /*09:10:23*/){
+// show at exact time for some life time
+void setupDMDAtExactTimeForLifeTime(bool isImportant, uint8_t reservedIndex, DMDType type, const char *text1, bool need_free_text1, const char *text2, bool need_free_text2, const uint8_t *font, unsigned long delay_inMS, unsigned long duration_inMS, unsigned long life_time_inMS, int16_t day, const char *exact_time /*09:10:23*/)
+{
   std::array<unsigned long, 4> timeInfo = getArrayOfTime(exact_time);
-  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(day,timeInfo[0],timeInfo[1],timeInfo[2],day,timeInfo[0],timeInfo[1],timeInfo[2]);
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1, life_time_inMS, millis()+distance_info[0]);
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(day, timeInfo[0], timeInfo[1], timeInfo[2], day, timeInfo[0], timeInfo[1], timeInfo[2]);
+  setupDMDdata(isImportant, reservedIndex, type, text1, 0, need_free_text1, text2, 0, need_free_text2, font, delay_inMS, duration_inMS, -1, life_time_inMS, millis() + distance_info[0]);
 }
 
-//show at exact time forever
-void setupDMDAtExactTimeForever(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int16_t day, const char * exact_time /*09:10:23*/){
+// show at exact time forever
+void setupDMDAtExactTimeForever(bool isImportant, uint8_t reservedIndex, DMDType type, const char *text1, bool need_free_text1, const char *text2, bool need_free_text2, const uint8_t *font, unsigned long delay_inMS, unsigned long duration_inMS, int16_t day, const char *exact_time /*09:10:23*/)
+{
   std::array<unsigned long, 4> timeInfo = getArrayOfTime(exact_time);
-  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(day,timeInfo[0],timeInfo[1],timeInfo[2],day,timeInfo[0],timeInfo[1],timeInfo[2]);
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1, 0, millis()+distance_info[0]);
+  std::array<long long, 2> distance_info = msDistanceFromDayTimeToDayTime(day, timeInfo[0], timeInfo[1], timeInfo[2], day, timeInfo[0], timeInfo[1], timeInfo[2]);
+  setupDMDdata(isImportant, reservedIndex, type, text1, 0, need_free_text1, text2, 0, need_free_text2, font, delay_inMS, duration_inMS, -1, 0, millis() + distance_info[0]);
 }
 
-//show at now for some iteration
-void setupDMDAtNowForIteration(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count){
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,max_count,0,0);
+// show at now for some iteration
+void setupDMDAtNowForIteration(bool isImportant, uint8_t reservedIndex, DMDType type, const char *text1, bool need_free_text1, const char *text2, bool need_free_text2, const uint8_t *font, unsigned long delay_inMS, unsigned long duration_inMS, int max_count)
+{
+  setupDMDdata(isImportant, reservedIndex, type, text1, 0, need_free_text1, text2, 0, need_free_text2, font, delay_inMS, duration_inMS, max_count, 0, 0);
 }
 
-//show at now for some life time
-void setupDMDAtNowForLifeTime(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS, unsigned long life_time_inMS){
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1,life_time_inMS,0);
+// show at now for some life time
+void setupDMDAtNowForLifeTime(bool isImportant, uint8_t reservedIndex, DMDType type, const char *text1, bool need_free_text1, const char *text2, bool need_free_text2, const uint8_t *font, unsigned long delay_inMS, unsigned long duration_inMS, unsigned long life_time_inMS)
+{
+  setupDMDdata(isImportant, reservedIndex, type, text1, 0, need_free_text1, text2, 0, need_free_text2, font, delay_inMS, duration_inMS, -1, life_time_inMS, 0);
 }
 
-//show at now forever
-void setupDMDAtNowForever(bool isImportant, uint8_t reservedIndex, DMDType type, const char * text1, bool need_free_text1, const char * text2, bool need_free_text2, const uint8_t * font, unsigned long delay_inMS, unsigned long duration_inMS){
-  setupDMDdata(isImportant,reservedIndex,type,text1,0,need_free_text1,text2,0,need_free_text2,font,delay_inMS,duration_inMS,-1,0,0);
+// show at now forever
+void setupDMDAtNowForever(bool isImportant, uint8_t reservedIndex, DMDType type, const char *text1, bool need_free_text1, const char *text2, bool need_free_text2, const uint8_t *font, unsigned long delay_inMS, unsigned long duration_inMS)
+{
+  setupDMDdata(isImportant, reservedIndex, type, text1, 0, need_free_text1, text2, 0, need_free_text2, font, delay_inMS, duration_inMS, -1, 0, 0);
 }
 
 void setupDMD()
@@ -542,77 +592,89 @@ void setupDMD()
   timerAlarmWrite(timer, 300, true);
   timerAlarmEnable(timer);
 
-  //control brightness DMD
+  // control brightness DMD
   ledcSetup(0, 5000, 8);
   ledcAttachPin(4, 0);
   ledcWrite(0, 20);
 
-
-  //setup clock
+  // setup clock
   wifi_mode_t mode = WiFi.getMode();
-  if(mode == WIFI_MODE_STA){
-    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,15000);
-    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,type_jws,false,count_down_jws,false,System5x7,1000,10000);
-  } else if(mode == WIFI_MODE_AP){
-    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"1. silakan connect ke wifi 'Speaker Murottal AP' dengan password 'qwerty654321'",false,"Cara Setup",false,System5x7,1000,5000);
-    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"2. Akses website http://speaker-murottal.local",false,"Cara Setup",false,System5x7,1000,5000);
-    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"3. Masuk menu 'Wifi manager' dan set wifi akses anda yg terkoneksi ke internet",false,"Cara Setup",false,System5x7,1000,5000);
-    setupDMDAtNowForever(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"4. silakan restart device anda",false,"Cara Setup",false,System5x7,1000,5000);
+  if (mode == WIFI_MODE_STA)
+  {
+    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, str_date_full, false, str_clock_full, false, System5x7, 1000, 15000);
+    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, type_jws, false, count_down_jws, false, System5x7, 1000, 10000);
+  }
+  else if (mode == WIFI_MODE_AP)
+  {
+    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "1. silakan connect ke wifi 'Speaker Murottal AP' dengan password 'qwerty654321'", false, "Cara Setup", false, System5x7, 1000, 5000);
+    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "2. Akses website http://speaker-murottal.local", false, "Cara Setup", false, System5x7, 1000, 5000);
+    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "3. Masuk menu 'Wifi manager' dan set wifi akses anda yg terkoneksi ke internet", false, "Cara Setup", false, System5x7, 1000, 5000);
+    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "4. silakan restart device anda", false, "Cara Setup", false, System5x7, 1000, 5000);
   }
 
   dmd.clearScreen(true);
-  marqueeText(Arial_Black_16, "Assalamu'alaikum",1);
+  marqueeText(Arial_Black_16, "Assalamu'alaikum", 1);
   dmd.clearScreen(true);
   marqueeText(Arial_Black_16, "Developed by AhsaiLabs", 1);
 
   logln("DMD is coming");
 }
 
-unsigned int stringWidth(const uint8_t *font, const char * str){
+unsigned int stringWidth(const uint8_t *font, const char *str)
+{
   unsigned int width = 0;
   char c;
   int idx;
   dmd.selectFont(font);
-  for(idx = 0; c = str[idx], c != 0; idx++) {
+  for (idx = 0; c = str[idx], c != 0; idx++)
+  {
     int cwidth = dmd.charWidth(c);
-    if(cwidth > 0)
+    if (cwidth > 0)
       width += cwidth + 1;
   }
-  if(width) {
+  if (width)
+  {
     width--;
   }
   return width;
 }
 
-uint8_t stringHeight(const uint8_t *font){
+uint8_t stringHeight(const uint8_t *font)
+{
   return pgm_read_byte(font + FONT_HEIGHT);
 }
 
-int drawTextCenter(const uint8_t * font, const char * str, int top){
-    unsigned int length = stringWidth(font, str);
-    int posX = ((32 * DISPLAYS_ACROSS) - length)/2;
-    dmd.drawString(posX, top, str, strlen(str), GRAPHICS_NORMAL);
-    return posX;
+int drawTextCenter(const uint8_t *font, const char *str, int top)
+{
+  unsigned int length = stringWidth(font, str);
+  int posX = ((32 * DISPLAYS_ACROSS) - length) / 2;
+  dmd.drawString(posX, top, str, strlen(str), GRAPHICS_NORMAL);
+  return posX;
 }
 
-int drawTextCenter(const uint8_t * font, const char * str, int top, byte bGraphicsMode){
-    unsigned int length = stringWidth(font, str);
-    int posX = ((32 * DISPLAYS_ACROSS) - length)/2;
-    dmd.drawString(posX, top, str, strlen(str), bGraphicsMode);
-    return posX;
+int drawTextCenter(const uint8_t *font, const char *str, int top, byte bGraphicsMode)
+{
+  unsigned int length = stringWidth(font, str);
+  int posX = ((32 * DISPLAYS_ACROSS) - length) / 2;
+  dmd.drawString(posX, top, str, strlen(str), bGraphicsMode);
+  return posX;
 }
 
-void clearLine(int x1, int y1, int x2, int y2){
-  dmd.drawLine(x1,y1,x2,y2,GRAPHICS_INVERSE);
+void clearLine(int x1, int y1, int x2, int y2)
+{
+  dmd.drawLine(x1, y1, x2, y2, GRAPHICS_INVERSE);
 }
-void clearBox(int x1, int y1, int x2, int y2){
-  dmd.drawBox(x1,y1,x2,y2,GRAPHICS_INVERSE);
+void clearBox(int x1, int y1, int x2, int y2)
+{
+  dmd.drawBox(x1, y1, x2, y2, GRAPHICS_INVERSE);
 }
-void clearFilledBox(int x1, int y1, int x2, int y2){
-  dmd.drawFilledBox(x1,y1,x2,y2,GRAPHICS_INVERSE);
+void clearFilledBox(int x1, int y1, int x2, int y2)
+{
+  dmd.drawFilledBox(x1, y1, x2, y2, GRAPHICS_INVERSE);
 }
 
-void anim_in(DMD_Data * item){
+void anim_in(DMD_Data *item)
+{
   int posy = 0;
   int old_posy = 0;
   int target = 0;
@@ -621,49 +683,58 @@ void anim_in(DMD_Data * item){
   bool isText1Done = true;
   bool isText2Done = true;
   dmd.selectFont(item->font);
-  switch (item->type) {
-      case DMD_TYPE_SCROLL_STATIC:
-      case DMD_TYPE_SCROLL_COUNTDOWN:
-      case DMD_TYPE_SCROLL_COUNTUP:
-        posy = 0-7-1;
-        old_posy = posy-1;
-        target = 1;
-        isText2Done = false;
-        break;
-      default:
-        break;
+  switch (item->type)
+  {
+  case DMD_TYPE_SCROLL_STATIC:
+  case DMD_TYPE_SCROLL_COUNTDOWN:
+  case DMD_TYPE_SCROLL_COUNTUP:
+    posy = 0 - 7 - 1;
+    old_posy = posy - 1;
+    target = 1;
+    isText2Done = false;
+    break;
+  default:
+    break;
   }
-  while(true){
-      if(need_reset_dmd_loop_index){
-        break;
+  while (true)
+  {
+    if (need_reset_dmd_loop_index)
+    {
+      break;
+    }
+    if (isText1Done && isText2Done)
+    {
+      break;
+    }
+    switch (item->type)
+    {
+    case DMD_TYPE_SCROLL_STATIC:
+    case DMD_TYPE_SCROLL_COUNTDOWN:
+    case DMD_TYPE_SCROLL_COUNTUP:
+      if (millis() - start2 > marquee_speed)
+      {
+        int posx = drawTextCenter(item->font, item->text2, posy, GRAPHICS_NORMAL);
+        int strWidth = stringWidth(item->font, item->text2);
+        clearLine(posx, old_posy, posx + strWidth - 1, old_posy);
+        start2 = millis();
+        if (!isText2Done)
+        {
+          old_posy = posy;
+          posy++;
+          if (posy > target)
+          {
+            isText2Done = true;
+          }
+        }
       }
-      if(isText1Done && isText2Done){
-        break;
-      }
-      switch (item->type) {
-          case DMD_TYPE_SCROLL_STATIC:
-          case DMD_TYPE_SCROLL_COUNTDOWN:
-          case DMD_TYPE_SCROLL_COUNTUP:
-              if (millis() - start2 > marquee_speed){
-                  int posx = drawTextCenter(item->font, item->text2, posy, GRAPHICS_NORMAL);
-                  int strWidth = stringWidth(item->font, item->text2);
-                  clearLine(posx,old_posy, posx+strWidth-1,old_posy);
-                  start2 = millis(); 
-                  if(!isText2Done){ 
-                    old_posy = posy;
-                    posy++;
-                    if(posy > target){
-                      isText2Done = true;
-                    }
-                  }
-              }
-              break;
-          default:
-              break;
-      }
+      break;
+    default:
+      break;
+    }
   }
 }
-void anim_out(DMD_Data * item){
+void anim_out(DMD_Data *item)
+{
   int posy = 0;
   int old_posy = 0;
   int target = 0;
@@ -672,47 +743,55 @@ void anim_out(DMD_Data * item){
   bool isText1Done = true;
   bool isText2Done = true;
   dmd.selectFont(item->font);
-  switch (item->type) {
-      case DMD_TYPE_SCROLL_STATIC:
-      case DMD_TYPE_SCROLL_COUNTDOWN:
-      case DMD_TYPE_SCROLL_COUNTUP:
-        target = 0-7-1;
-        posy = 1;
-        old_posy = posy+1;
-        isText2Done = false;
-        break;
-      default:
-        break;
+  switch (item->type)
+  {
+  case DMD_TYPE_SCROLL_STATIC:
+  case DMD_TYPE_SCROLL_COUNTDOWN:
+  case DMD_TYPE_SCROLL_COUNTUP:
+    target = 0 - 7 - 1;
+    posy = 1;
+    old_posy = posy + 1;
+    isText2Done = false;
+    break;
+  default:
+    break;
   }
-  while(true){
-      if(need_reset_dmd_loop_index){
-        break;
+  while (true)
+  {
+    if (need_reset_dmd_loop_index)
+    {
+      break;
+    }
+    if (isText1Done && isText2Done)
+    {
+      break;
+    }
+    switch (item->type)
+    {
+    case DMD_TYPE_SCROLL_STATIC:
+    case DMD_TYPE_SCROLL_COUNTDOWN:
+    case DMD_TYPE_SCROLL_COUNTUP:
+      if (millis() - start2 > marquee_speed)
+      {
+        int posx = drawTextCenter(item->font, item->text2, posy, GRAPHICS_NORMAL);
+        int strWidth = stringWidth(item->font, item->text2);
+        int strHeight = stringHeight(item->font);
+        clearLine(posx, posy + strHeight, posx + strWidth - 1, posy + strHeight);
+        start2 = millis();
+        if (!isText2Done)
+        {
+          old_posy = posy;
+          posy--;
+          if (posy < target)
+          {
+            isText2Done = true;
+          }
+        }
       }
-      if(isText1Done && isText2Done){
-        break;
-      }
-      switch (item->type) {
-          case DMD_TYPE_SCROLL_STATIC:
-          case DMD_TYPE_SCROLL_COUNTDOWN:
-          case DMD_TYPE_SCROLL_COUNTUP:
-              if (millis() - start2 > marquee_speed){
-                  int posx = drawTextCenter(item->font, item->text2, posy, GRAPHICS_NORMAL);
-                  int strWidth = stringWidth(item->font, item->text2);
-                  int strHeight = stringHeight(item->font);
-                  clearLine(posx,posy+strHeight, posx+strWidth-1,posy+strHeight);
-                  start2 = millis();
-                  if(!isText2Done){ 
-                    old_posy = posy;
-                    posy--;
-                    if(posy < target){
-                      isText2Done = true;
-                    }
-                  }
-              }
-              break;
-          default:
-              break;
-      }
+      break;
+    default:
+      break;
+    }
   }
 }
 
@@ -722,47 +801,54 @@ void taskDMD(void *parameter)
   logf("DMD stack size : %d", uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
-    //byte b;
-    // 10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
-    //dmd.drawBox(0, 0, (32 * DISPLAYS_ACROSS) - 1, (16 * DISPLAYS_DOWN) - 1, GRAPHICS_TOGGLE);
+    // byte b;
+    //  10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
+    // dmd.drawBox(0, 0, (32 * DISPLAYS_ACROSS) - 1, (16 * DISPLAYS_DOWN) - 1, GRAPHICS_TOGGLE);
 
-    for(dmd_loop_index=0;dmd_loop_index<DMD_DATA_SIZE;dmd_loop_index++){
-      if(need_reset_dmd_loop_index){
+    for (dmd_loop_index = 0; dmd_loop_index < DMD_DATA_SIZE; dmd_loop_index++)
+    {
+      if (need_reset_dmd_loop_index)
+      {
         need_reset_dmd_loop_index = false;
         dmd_loop_index = -1;
         continue;
       }
 
-      DMD_Data * item = dmd_data_list+dmd_loop_index;
+      DMD_Data *item = dmd_data_list + dmd_loop_index;
 
-      if(item->type < 0){
-        //logln("no type");
+      if (item->type < 0)
+      {
+        // logln("no type");
         continue;
       }
 
-      unsigned long start  = millis();
+      unsigned long start = millis();
 
-      if(item->start_time_inMS > 0 && start < item->start_time_inMS){
-        //logln("dont go now");
+      if (item->start_time_inMS > 0 && start < item->start_time_inMS)
+      {
+        // logln("dont go now");
         continue;
       }
 
-      //Logic to destroy DMDData
+      // Logic to destroy DMDData
       bool deleteData = false;
-      if(item->max_count > 0 && item->count >= item->max_count){
-        //logln("max_count > 0");
+      if (item->max_count > 0 && item->count >= item->max_count)
+      {
+        // logln("max_count > 0");
         deleteData = true;
       }
 
-      if(item->life_time_inMS > 0 && (millis()-item->start_time_inMS) > item->life_time_inMS){
-        //logln("life_time_inMS > 0");
+      if (item->life_time_inMS > 0 && (millis() - item->start_time_inMS) > item->life_time_inMS)
+      {
+        // logln("life_time_inMS > 0");
         deleteData = true;
       }
 
-      if(deleteData){
-        //reset struct to stop drawing in dmd
+      if (deleteData)
+      {
+        // reset struct to stop drawing in dmd
         resetDMDData(dmd_loop_index);
-        //logln("delete");
+        // logln("delete");
         continue;
       }
 
@@ -770,211 +856,250 @@ void taskDMD(void *parameter)
 
       dmd.clearScreen(true);
       anim_in(item);
-      //logln("go.................");
+      // logln("go.................");
       item->count++;
-      while(start + item->duration_inMS > millis()){
-        if(need_reset_dmd_loop_index){
+      while (start + item->duration_inMS > millis())
+      {
+        if (need_reset_dmd_loop_index)
+        {
           break;
         }
         log("go");
         switch (item->type)
         {
-          case DMD_TYPE_SCROLL_STATIC:
+        case DMD_TYPE_SCROLL_STATIC:
+        {
+          int counter = item->duration_inMS / item->delay_inMS;
+          unsigned long start = millis();
+          unsigned long start2 = start;
+          dmd.selectFont(item->font);
+          int width = stringWidth(item->font, item->text1);
+          int8_t step = 1;
+          bool isBounce = false;
+          int posx = (32 * DISPLAYS_ACROSS) - 1;
+          bool message_full_displayed = false;
+          if (width <= (32 * DISPLAYS_ACROSS))
+          {
+            isBounce = true;
+            posx = 0;
+          }
+          while (counter >= 0 || !message_full_displayed)
+          {
+            if (need_reset_dmd_loop_index)
             {
-              int counter = item->duration_inMS/item->delay_inMS;
-              unsigned long start = millis();
-              unsigned long start2 = start;
-              dmd.selectFont(item->font);
-              int width = stringWidth(item->font,item->text1);
-              int8_t step = 1;
-              bool isBounce = false;
-              int posx = (32*DISPLAYS_ACROSS) - 1;
-              bool message_full_displayed = false;
-              if(width <= (32*DISPLAYS_ACROSS)){
-                  isBounce = true;
-                  posx = 0;
-              }
-              while(counter >= 0 || !message_full_displayed){
-                  if(need_reset_dmd_loop_index){
-                    break;
-                  }
-                  if (millis() - start > item->delay_inMS){   
-                    drawTextCenter(item->font, item->text2, 1);
-                    start = millis();
-                    counter--;
-                  }
-                  if (millis() - start2 > marquee_speed){
-                    log("*");
-                    dmd.drawString(posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
-                    if(isBounce){
-                      posx += step;
-                      if(posx >= ((32*DISPLAYS_ACROSS)-width)){
-                        step = -1;
-                        message_full_displayed = true;
-                      } else if(posx<=0){
-                        step = 1;
-                        message_full_displayed = false;
-                      } else {
-                        message_full_displayed = false;
-                      }
-                    } else {
-                      if(posx < (-1*width)){
-                        posx = (32*DISPLAYS_ACROSS) - 1;
-                        message_full_displayed = true;
-                      } else {
-                        message_full_displayed = false;
-                      }
-                      posx--;
-                    }
-                    start2 = millis();
-                  }
-              }
+              break;
             }
-            break;
-          case DMD_TYPE_STATIC_STATIC:
-            drawTextCenter(item->font, item->text2, 1);
-            drawTextCenter(item->font, item->text1, 9); 
-            break;
-          case DMD_TYPE_SCROLL: //single scrolling text
+            if (millis() - start > item->delay_inMS)
             {
-              dmd.selectFont(item->font);
-              dmd.drawMarquee(item->text1, strlen(item->text1), (32 * DISPLAYS_ACROSS) - 1, 1);
-              unsigned long start = millis();
-              unsigned long start2 = start;
-              boolean ret = false;
-              while (!ret){
-                if(need_reset_dmd_loop_index){
-                  break;
-                }
-                if ((start2 + marquee_speed) < millis())
+              drawTextCenter(item->font, item->text2, 1);
+              start = millis();
+              counter--;
+            }
+            if (millis() - start2 > marquee_speed)
+            {
+              log("*");
+              dmd.drawString(posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
+              if (isBounce)
+              {
+                posx += step;
+                if (posx >= ((32 * DISPLAYS_ACROSS) - width))
                 {
-                  log("*");
-                  ret = dmd.stepMarquee(-1, 0);
-                  start2 = millis();
+                  step = -1;
+                  message_full_displayed = true;
+                }
+                else if (posx <= 0)
+                {
+                  step = 1;
+                  message_full_displayed = false;
+                }
+                else
+                {
+                  message_full_displayed = false;
                 }
               }
+              else
+              {
+                if (posx < (-1 * width))
+                {
+                  posx = (32 * DISPLAYS_ACROSS) - 1;
+                  message_full_displayed = true;
+                }
+                else
+                {
+                  message_full_displayed = false;
+                }
+                posx--;
+              }
+              start2 = millis();
             }
-            break;
-          case DMD_TYPE_SCROLL_COUNTDOWN: //count down timer
+          }
+        }
+        break;
+        case DMD_TYPE_STATIC_STATIC:
+          drawTextCenter(item->font, item->text2, 1);
+          drawTextCenter(item->font, item->text1, 9);
+          break;
+        case DMD_TYPE_SCROLL: // single scrolling text
+        {
+          dmd.selectFont(item->font);
+          dmd.drawMarquee(item->text1, strlen(item->text1), (32 * DISPLAYS_ACROSS) - 1, 1);
+          unsigned long start = millis();
+          unsigned long start2 = start;
+          boolean ret = false;
+          while (!ret)
+          {
+            if (need_reset_dmd_loop_index)
             {
-              int counter = item->duration_inMS/item->delay_inMS;
-              int leftSeconds = counter;
-              int hours = leftSeconds/3600;
-              int minutes = 0;
-              int seconds = 0;
-              if(hours > 0){
-                leftSeconds = leftSeconds % 3600;
-              }
-              minutes = leftSeconds/60;
-              if(minutes > 0){
-                leftSeconds = leftSeconds % 60;
-              }
-              seconds = leftSeconds;
-
-              dmd.selectFont(item->font);
-              
-              unsigned long start = millis();
-              unsigned long start2 = start;
-              int width = stringWidth(item->font,item->text1);
-              int posx = (32*DISPLAYS_ACROSS) - 1;
-              bool message_full_displayed = false;
-              while(counter >= 0 || !message_full_displayed){
-                if(need_reset_dmd_loop_index){
-                  break;
-                }
-
-                if (millis() - start > item->delay_inMS){
-                  if(seconds==-1){
-                    seconds=59;
-                    minutes--;
-                  }
-                  if(minutes==-1){
-                    minutes=59;
-                    hours--;
-                  }
-                  //display
-                  char count_down[9];
-                  sprintf_P(count_down, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-                  drawTextCenter(item->font, count_down, 1);
-                  seconds--;
-                  counter--;
-                  start = millis();
-                }
-
-                if (millis() - start2 > marquee_speed){
-                  log("*");
-                  dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
-                  if(posx < (-1*width)){
-                    posx = (32*DISPLAYS_ACROSS) - 1;
-                    message_full_displayed = true;
-                  } else {
-                    message_full_displayed = false;
-                  }
-                  start2 = millis();
-                }
-              }
+              break;
             }
-            break;
-          case DMD_TYPE_SCROLL_COUNTUP: //count up timer
+            if ((start2 + marquee_speed) < millis())
             {
-              int counter = item->duration_inMS/1000;
-              int hours = 0;
-              int minutes = 0;
-              int seconds = 0;
-
-              dmd.selectFont(item->font);
-              
-              unsigned long start = millis();
-              unsigned long start2 = start;
-              int width = stringWidth(item->font,item->text1);
-              int posx = (32*DISPLAYS_ACROSS) - 1;
-              int countup = 0;
-              bool message_full_displayed = false;
-              while(countup <= counter || !message_full_displayed){
-                if(need_reset_dmd_loop_index){
-                  break;
-                }
-                if (millis() - start > item->delay_inMS){
-                  if(seconds==61){
-                    seconds=1;
-                    minutes++;
-                  }
-                  if(minutes==61){
-                    minutes=1;
-                    hours++;
-                  }
-                  //display
-                  char count_up[9];
-                  sprintf_P(count_up, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-                  drawTextCenter(item->font, count_up, 1);
-                  seconds++;
-                  countup++;
-                  start = millis();
-                }
-
-                if (millis() - start2 > marquee_speed){
-                  log("*");
-                  dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
-                  if(posx < (-1*width)){
-                    posx = (32*DISPLAYS_ACROSS) - 1;
-                    message_full_displayed = true;
-                  } else {
-                    message_full_displayed = true;
-                  }
-                  start2 = millis();
-                }
-              }
+              log("*");
+              ret = dmd.stepMarquee(-1, 0);
+              start2 = millis();
             }
-            break;
-          default:
-            break;
+          }
+        }
+        break;
+        case DMD_TYPE_SCROLL_COUNTDOWN: // count down timer
+        {
+          int counter = item->duration_inMS / item->delay_inMS;
+          int leftSeconds = counter;
+          int hours = leftSeconds / 3600;
+          int minutes = 0;
+          int seconds = 0;
+          if (hours > 0)
+          {
+            leftSeconds = leftSeconds % 3600;
+          }
+          minutes = leftSeconds / 60;
+          if (minutes > 0)
+          {
+            leftSeconds = leftSeconds % 60;
+          }
+          seconds = leftSeconds;
+
+          dmd.selectFont(item->font);
+
+          unsigned long start = millis();
+          unsigned long start2 = start;
+          int width = stringWidth(item->font, item->text1);
+          int posx = (32 * DISPLAYS_ACROSS) - 1;
+          bool message_full_displayed = false;
+          while (counter >= 0 || !message_full_displayed)
+          {
+            if (need_reset_dmd_loop_index)
+            {
+              break;
+            }
+
+            if (millis() - start > item->delay_inMS)
+            {
+              if (seconds == -1)
+              {
+                seconds = 59;
+                minutes--;
+              }
+              if (minutes == -1)
+              {
+                minutes = 59;
+                hours--;
+              }
+              // display
+              char count_down[9];
+              sprintf_P(count_down, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
+              drawTextCenter(item->font, count_down, 1);
+              seconds--;
+              counter--;
+              start = millis();
+            }
+
+            if (millis() - start2 > marquee_speed)
+            {
+              log("*");
+              dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
+              if (posx < (-1 * width))
+              {
+                posx = (32 * DISPLAYS_ACROSS) - 1;
+                message_full_displayed = true;
+              }
+              else
+              {
+                message_full_displayed = false;
+              }
+              start2 = millis();
+            }
+          }
+        }
+        break;
+        case DMD_TYPE_SCROLL_COUNTUP: // count up timer
+        {
+          int counter = item->duration_inMS / 1000;
+          int hours = 0;
+          int minutes = 0;
+          int seconds = 0;
+
+          dmd.selectFont(item->font);
+
+          unsigned long start = millis();
+          unsigned long start2 = start;
+          int width = stringWidth(item->font, item->text1);
+          int posx = (32 * DISPLAYS_ACROSS) - 1;
+          int countup = 0;
+          bool message_full_displayed = false;
+          while (countup <= counter || !message_full_displayed)
+          {
+            if (need_reset_dmd_loop_index)
+            {
+              break;
+            }
+            if (millis() - start > item->delay_inMS)
+            {
+              if (seconds == 61)
+              {
+                seconds = 1;
+                minutes++;
+              }
+              if (minutes == 61)
+              {
+                minutes = 1;
+                hours++;
+              }
+              // display
+              char count_up[9];
+              sprintf_P(count_up, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
+              drawTextCenter(item->font, count_up, 1);
+              seconds++;
+              countup++;
+              start = millis();
+            }
+
+            if (millis() - start2 > marquee_speed)
+            {
+              log("*");
+              dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
+              if (posx < (-1 * width))
+              {
+                posx = (32 * DISPLAYS_ACROSS) - 1;
+                message_full_displayed = true;
+              }
+              else
+              {
+                message_full_displayed = true;
+              }
+              start2 = millis();
+            }
+          }
+        }
+        break;
+        default:
+          break;
         }
         logln("*");
         delay(item->delay_inMS);
-      } //end while
+      } // end while
       anim_out(item);
-    } //end for
-    
+    } // end for
 
     /*
     dmd.drawChar(0, 3, '2', GRAPHICS_NORMAL);
@@ -992,15 +1117,13 @@ void taskDMD(void *parameter)
     dmd.drawChar(15, 3, ':', GRAPHICS_OR); // clock colon overlay on
     delay(1000);*/
 
-    
-
     // half the pixels on
-    //dmd.drawTestPattern(PATTERN_ALT_0);
-    //delay(1000);
+    // dmd.drawTestPattern(PATTERN_ALT_0);
+    // delay(1000);
 
     // the other half on
-    //dmd.drawTestPattern(PATTERN_ALT_1);
-    //delay(1000);
+    // dmd.drawTestPattern(PATTERN_ALT_1);
+    // delay(1000);
 
     // display some text
     // dmd.clearScreen(true);
@@ -1051,8 +1174,8 @@ void taskDMD(void *parameter)
   }
 }
 
-
-void startTaskDMD(){
+void startTaskDMD()
+{
   xTaskCreatePinnedToCore(
       taskDMD,        // Function that should be called
       "Display DMD",  // Name of the task (for debugging)
@@ -1063,12 +1186,13 @@ void startTaskDMD(){
       CONFIG_ARDUINO_RUNNING_CORE);
 }
 
-void stopTaskDMD(){
-  if(taskDMDHandle != NULL){
+void stopTaskDMD()
+{
+  if (taskDMDHandle != NULL)
+  {
     vTaskDelete(taskDMDHandle);
   }
 }
-
 
 //================================================================================
 //==================================   Task Toggle LED  ==========================
@@ -1079,7 +1203,7 @@ uint32_t led_off_delay = 500;
 void taskToggleLED(void *parameter)
 {
 
-  //logf("LED stack size : %d", uxTaskGetStackHighWaterMark(NULL));
+  // logf("LED stack size : %d", uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     digitalWrite(built_in_led, HIGH);
@@ -1088,7 +1212,6 @@ void taskToggleLED(void *parameter)
     delay(led_off_delay);
   }
 }
-
 
 void startTaskToggleLED()
 {
@@ -1104,13 +1227,12 @@ void startTaskToggleLED()
 
 void stopTaskToggleLED()
 {
-  if(taskLEDHandle != NULL){
+  if (taskLEDHandle != NULL)
+  {
     vTaskDelete(taskLEDHandle);
   }
   digitalWrite(built_in_led, HIGH);
 }
-
-
 
 //=====================================================================================
 //==================================   Task Keep WiFi Alive  ==========================
@@ -1169,8 +1291,6 @@ void taskKeepWiFiAlive(void *parameter)
     stopTaskToggleLED();
   }
 }
-
-
 
 //================================================================================
 //==================================   Task Web Server  ==========================
@@ -1545,79 +1665,86 @@ void taskWebServer(void *parameter)
                 xSemaphoreGive(mutex_date); 
               }
               server.sendHeader("Location", "/setting", true);
-              server.send(302, "text/plain", "");
-            });
+              server.send(302, "text/plain", ""); });
 
   server.on("/brightness", []()
             {
               String level = server.arg("level");
               ledcWrite(0, level.toInt());
-              server.send(404, "text/plain", "ubah brigtness berhasil");
-            });
+              server.send(404, "text/plain", "ubah brigtness berhasil"); });
 
   server.on("/restart", []()
             {
               server.send(200, "text/plain", "restart ESP");
-              ESP.restart();
-            });
+              ESP.restart(); });
 
-  server.on("/wifi",[](){
+  server.on("/wifi", []()
+            {
             if (server.hasArg("ssid")&& server.hasArg("password")) {
               String ssid = server.arg("ssid");
               String password = server.arg("password");
               stopTaskDMD();
               delay(1000);
+
+              //preferences.begin("settings", false);
               preferences.putString("ssid", ssid);
               preferences.putString("password", password);
+              //preferences.end();
+
               server.send(200, "text/plain", "setting wifi berhasil, silakan restart");
               startTaskDMD();
               //ESP.restart();
             } else {
               server.send(200, "text/html", index_html_wifi);
-            }
-  });
+            } });
 
-  server.on("/forgetwifi",[](){
-            preferences.remove("ssid");
-            preferences.remove("password");
-            server.send(200, "text/plain", "forget wifi berhasil, silakan restart");
-            //ESP.restart();
-  });
+  server.on("/forgetwifi", []()
+            {
+    // preferences.begin("settings", false);
+    preferences.remove("ssid");
+    preferences.remove("password");
+    // preferences.end(); }); 
+    
+    server.send(200, "text/plain", "forget wifi berhasil, silakan restart");
+    // ESP.restart(); 
+            });
 
-  server.on("/logs",[](){
-            server.send(200, "text/html", index_html_ws);
-  });
+  server.on("/logs", []()
+            { server.send(200, "text/html", index_html_ws); });
 
   server.onNotFound(handleWebNotFound);
 
   server.begin();
   logln("HTTP server started");
-  logf("Web Server stack size : %d",uxTaskGetStackHighWaterMark(NULL));
+  logf("Web Server stack size : %d", uxTaskGetStackHighWaterMark(NULL));
   for (;;)
   {
     handleServerClient();
   }
 }
 
-
-void startTaskWebSocketServer(){
+void startTaskWebSocketServer()
+{
   xTaskCreatePinnedToCore(
       taskWebSocketServer,  // Function that should be called
-      "Web Socket",   // Name of the task (for debugging)
-      5000,           // Stack size (bytes)
-      NULL,           // Parameter to pass
-      1,              // Task priority
+      "Web Socket",         // Name of the task (for debugging)
+      5000,                 // Stack size (bytes)
+      NULL,                 // Parameter to pass
+      1,                    // Task priority
       &taskWebSocketHandle, // Task handle
       CONFIG_ARDUINO_RUNNING_CORE);
 }
 
-void stopTaskWebSocketServer(){
-  if(taskWebSocketHandle != NULL){
+void stopTaskWebSocketServer()
+{
+  if (taskWebSocketHandle != NULL)
+  {
     vTaskDelete(taskWebSocketHandle);
   }
 }
 
-void startTaskWebServer(){
+void startTaskWebServer()
+{
   xTaskCreatePinnedToCore(
       taskWebServer,  // Function that should be called
       "Web Server",   // Name of the task (for debugging)
@@ -1628,24 +1755,24 @@ void startTaskWebServer(){
       CONFIG_ARDUINO_RUNNING_CORE);
 }
 
-void stopTaskWebServer(){
-  if(taskWebHandle != NULL){
+void stopTaskWebServer()
+{
+  if (taskWebHandle != NULL)
+  {
     vTaskDelete(taskWebHandle);
   }
 }
 
-
-
 //===========================================================================
 //==================================   Task Clock  ==========================
 //===========================================================================
-//const char * ntpServer = "pool.ntp.org";
-const char * ntpServer = "time.google.com";
-const uint8_t timezone = 7; //jakarta GMT+7
-const long  gmtOffset_sec = timezone*3600; //in seconds
-const int   daylightOffset_sec = 0;
+// const char * ntpServer = "pool.ntp.org";
+const char *ntpServer = "time.google.com";
+const uint8_t timezone = 7;                 // jakarta GMT+7
+const long gmtOffset_sec = timezone * 3600; // in seconds
+const int daylightOffset_sec = 0;
 
-void taskClock(void * parameter)
+void taskClock(void *parameter)
 {
   isClockReady = false;
   while (!isWiFiReady && !isClockManual)
@@ -1653,16 +1780,19 @@ void taskClock(void * parameter)
     logln("Task clock waiting for wifi...");
     delay(5000);
   }
-  
-  if(!isClockManual){
+
+  if (!isClockManual)
+  {
     // Init and get the time
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
     struct tm timeinfo;
-    while(!getLocalTime(&timeinfo) && !isClockManual){
+    while (!getLocalTime(&timeinfo) && !isClockManual)
+    {
       logln("Clock : Failed to obtain time");
       delay(2000);
     }
-    if(!isClockManual){
+    if (!isClockManual)
+    {
       Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
       // log("Day of week: ");
       // logln(&timeinfo, "%A");
@@ -1685,28 +1815,28 @@ void taskClock(void * parameter)
       // strftime(timeMonth,10, "%B", &timeinfo);
       // strftime(timeYear,5, "%Y", &timeinfo);
 
-
       h24 = timeinfo.tm_hour; // 24 hours
-      h = timeinfo.tm_hour > 12 ? timeinfo.tm_hour-12 : timeinfo.tm_hour;
+      h = timeinfo.tm_hour > 12 ? timeinfo.tm_hour - 12 : timeinfo.tm_hour;
       m = timeinfo.tm_min;
       s = timeinfo.tm_sec;
     }
-  } 
-  
-  if(isClockManual){
+  }
+
+  if (isClockManual)
+  {
     isClockManual = false;
   }
 
-  logf("Clock stack size : %d",uxTaskGetStackHighWaterMark(NULL));
+  logf("Clock stack size : %d", uxTaskGetStackHighWaterMark(NULL));
 
-  String type="AM";
+  String type = "AM";
 
   for (;;)
   {
     s = s + 1;
     delay(1000);
-    xSemaphoreTake(mutex_clock, portMAX_DELAY); 
-    
+    xSemaphoreTake(mutex_clock, portMAX_DELAY);
+
     if (s == 60)
     {
       s = 0;
@@ -1746,24 +1876,34 @@ void taskClock(void * parameter)
   }
 }
 
-
-const char * getJsonData(const char * link){
+const char *getJsonData(const char *link)
+{
   return NULL;
 }
 
-bool isKabisat(int year){
+bool isKabisat(int year)
+{
   bool isKabisat = false;
-  if(year % 4 == 0){
-      if(year % 100 == 0){
-        if(year % 400 == 0){
-          isKabisat = true;
-        } else {
-          isKabisat = false;
-        }
-      } else {
+  if (year % 4 == 0)
+  {
+    if (year % 100 == 0)
+    {
+      if (year % 400 == 0)
+      {
         isKabisat = true;
       }
-  } else {
+      else
+      {
+        isKabisat = false;
+      }
+    }
+    else
+    {
+      isKabisat = true;
+    }
+  }
+  else
+  {
     isKabisat = false;
   }
   return isKabisat;
@@ -1772,38 +1912,41 @@ bool isKabisat(int year){
 //===========================================================================
 //==================================   Task Masehi Date & Hijri Date  =======
 //===========================================================================
-void taskDate(void * parameter)
+void taskDate(void *parameter)
 {
   isDateReady = false;
   for (;;)
   {
     xSemaphoreTake(mutex_con, portMAX_DELAY);
-    { 
+    {
       bool isMasehiOfflineMode = false;
       bool isHijriOfflineMode = false;
-      if(isWiFiReady)
+      if (isWiFiReady)
       {
-        //ONLINE MODE
-        //get masehi date
+        // ONLINE MODE
+        // get masehi date
         configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
         struct tm timeinfo;
-        if(!getLocalTime(&timeinfo)){
+        if (!getLocalTime(&timeinfo))
+        {
           logln("Date : Failed to obtain time");
           isMasehiOfflineMode = true;
           isHijriOfflineMode = true;
-        } else {
+        }
+        else
+        {
           Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
 
           xSemaphoreTake(mutex_date, portMAX_DELAY);
           day = timeinfo.tm_mday;
-          month = timeinfo.tm_mon; //0-11 since januari
-          year = timeinfo.tm_year+1900;
-          weekday = timeinfo.tm_wday;//0-6 since sunday
+          month = timeinfo.tm_mon; // 0-11 since januari
+          year = timeinfo.tm_year + 1900;
+          weekday = timeinfo.tm_wday; // 0-6 since sunday
           xSemaphoreGive(mutex_date);
 
-          //get hijri date
+          // get hijri date
           char link[140] = {'\0'};
-          sprintf_P(link, (PGM_P)F("https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=%04d&the_m=%02d&the_d=%02d&the_conv=ctoh&lg=1"), year, month+1, day);
+          sprintf_P(link, (PGM_P)F("https://www.al-habib.info/utils/calendar/pengubah-kalender-hijriyah-v7.php?the_y=%04d&the_m=%02d&the_d=%02d&the_conv=ctoh&lg=1"), year, month + 1, day);
           logln(link);
 
           WiFiClientSecure client;
@@ -1814,19 +1957,23 @@ void taskDate(void * parameter)
           http.begin(client, link);
           int httpResponseCode = http.GET();
 
-          if (httpResponseCode==200) {
-            logf("Date HTTP Response code: %d",httpResponseCode);
+          if (httpResponseCode == 200)
+          {
+            logf("Date HTTP Response code: %d", httpResponseCode);
             String jsonData = http.getString();
 
             DynamicJsonDocument doc(512);
             DeserializationError error = deserializeJson(doc, jsonData);
 
-            if (error) {
+            if (error)
+            {
               log("Date deserializeJson() failed: ");
               logln(reinterpret_cast<const char *>(error.f_str()));
               isHijriOfflineMode = true;
-            } else {
-              const char * hijri_date = doc["tanggal_hijriyah"];
+            }
+            else
+            {
+              const char *hijri_date = doc["tanggal_hijriyah"];
               xSemaphoreTake(mutex_date, portMAX_DELAY);
               sprintf_P(str_hijri_date, (PGM_P)F("%s"), hijri_date);
               hijri_day = doc["hijri_tanggal"];
@@ -1834,107 +1981,141 @@ void taskDate(void * parameter)
               hijri_year = doc["hijri_tahun"];
               xSemaphoreGive(mutex_date);
             }
-            
+
             doc.clear();
-          } else {
-            logf("Date Error code: %d",httpResponseCode);
+          }
+          else
+          {
+            logf("Date Error code: %d", httpResponseCode);
             isHijriOfflineMode = true;
           }
 
           // Free resources
           http.end();
         }
-      } else {
+      }
+      else
+      {
         isMasehiOfflineMode = true;
         isHijriOfflineMode = true;
       }
 
-      if(day>-1 && hijri_day>-1){
+      if (day > -1 && hijri_day > -1)
+      {
         isDateReady = true;
       }
 
-      if(isDateReady){
-        if(isMasehiOfflineMode){
-          //MASEHI OFFLINE MODE
-          //31: 0,2,4,6,7,9,11
-          //30: 3,5,8,10,12
-          //28/29: 1
+      if (isDateReady)
+      {
+        if (isMasehiOfflineMode)
+        {
+          // MASEHI OFFLINE MODE
+          // 31: 0,2,4,6,7,9,11
+          // 30: 3,5,8,10,12
+          // 28/29: 1
           xSemaphoreTake(mutex_date, portMAX_DELAY);
           day++;
-          if(day>=29){
-            if(month==1){
-              if(isKabisat(year)){
-                if(day>29){
-                  day = 1;
-                  month++;
-                }
-              } else {
-                if(day>28){
+          if (day >= 29)
+          {
+            if (month == 1)
+            {
+              if (isKabisat(year))
+              {
+                if (day > 29)
+                {
                   day = 1;
                   month++;
                 }
               }
-            } else if(month==3 || month==5 || month==8 || month==10 || month==12){
-              if(day>30){
+              else
+              {
+                if (day > 28)
+                {
+                  day = 1;
+                  month++;
+                }
+              }
+            }
+            else if (month == 3 || month == 5 || month == 8 || month == 10 || month == 12)
+            {
+              if (day > 30)
+              {
                 day = 1;
                 month++;
               }
-            } else if(month==0 || month==2 || month==4 || month==6 || month==7 || month==9 || month==11){
-              if(day>31){
+            }
+            else if (month == 0 || month == 2 || month == 4 || month == 6 || month == 7 || month == 9 || month == 11)
+            {
+              if (day > 31)
+              {
                 day = 1;
                 month++;
               }
             }
           }
 
-          if(month>11){
+          if (month > 11)
+          {
             month = 0;
             year++;
           }
 
           weekday++;
-          if(weekday>=7){
-            weekday=0;
-          }   
+          if (weekday >= 7)
+          {
+            weekday = 0;
+          }
           xSemaphoreGive(mutex_date);
         }
 
-        if(isHijriOfflineMode){
-          //HIJRI OFFLINE MODE
-          //dont adjust here
+        if (isHijriOfflineMode)
+        {
+          // HIJRI OFFLINE MODE
+          // dont adjust here
         }
 
-        //calculation
+        // calculation
         String day_names[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jum'at", "Sabtu"};
         String month_names[] = {"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"};
 
-        memset(str_date,'\0',sizeof(char)*26);
-        sprintf_P(str_date, (PGM_P)F("%s, %02d %s %02d"), day_names[weekday].c_str(), day, month_names[month].c_str(),year);
+        memset(str_date, '\0', sizeof(char) * 26);
+        sprintf_P(str_date, (PGM_P)F("%s, %02d %s %02d"), day_names[weekday].c_str(), day, month_names[month].c_str(), year);
         sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
 
-        if(weekday == 0){
-          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari senin, silakan dipersiapkan semuanya",false,"Info PUASA", false, System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
-        } else if(weekday == 3){
-          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa hari kamis, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
-        } else if(weekday == 4){
-          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,0,"18:30:00",1,"17:30:00");
-        } else if(weekday == 5){
-          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat",false,"Ayo Ayo ayo", false,  System5x7,1000,5000,0,"00:01:00",0,"17:30:00");
+        if (weekday == 0)
+        {
+          setupDMDAtExactRangeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Besok adalah puasa hari senin, silakan dipersiapkan semuanya", false, "Info PUASA", false, System5x7, 1000, 5000, 0, "09:00:00", 0, "23:59:00");
+        }
+        else if (weekday == 3)
+        {
+          setupDMDAtExactRangeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Besok adalah puasa hari kamis, silakan dipersiapkan semuanya", false, "Info PUASA", false, System5x7, 1000, 5000, 0, "09:00:00", 0, "23:59:00");
+        }
+        else if (weekday == 4)
+        {
+          setupDMDAtExactRangeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat", false, "Ayo Ayo ayo", false, System5x7, 1000, 5000, 0, "18:30:00", 1, "17:30:00");
+        }
+        else if (weekday == 5)
+        {
+          setupDMDAtExactRangeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat", false, "Ayo Ayo ayo", false, System5x7, 1000, 5000, 0, "00:01:00", 0, "17:30:00");
         }
 
-        if(hijri_day == 12 || hijri_day == 13 || hijri_day == 14){
-          setupDMDAtExactRangeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya",false,"Info PUASA", false,  System5x7,1000,5000,0,"09:00:00",0,"23:59:00");
+        if (hijri_day == 12 || hijri_day == 13 || hijri_day == 14)
+        {
+          setupDMDAtExactRangeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Besok adalah puasa ayyamul bidh, silakan dipersiapkan semuanya", false, "Info PUASA", false, System5x7, 1000, 5000, 0, "09:00:00", 0, "23:59:00");
         }
       }
 
       logf("Date stack size : %d", uxTaskGetStackHighWaterMark(NULL));
     }
     xSemaphoreGive(mutex_con);
-    if(!isDateReady){
+    if (!isDateReady)
+    {
       logln("Task date waiting for wifi...");
-      delay(35000); //35 seconds
-    } else {
-      delayMSUntilAtTime(0,1,0);
+      delay(35000); // 35 seconds
+    }
+    else
+    {
+      delayMSUntilAtTime(0, 1, 0);
     }
   }
 }
@@ -1945,20 +2126,23 @@ void stopTaskCountdownJWS();
 //=========================================================================
 //==================================  Task Jadwal Sholat =================
 //=========================================================================
-void taskJadwalSholat(void * parameter){
-  for(;;){
-    if(!isDateReady){
+void taskJadwalSholat(void *parameter)
+{
+  for (;;)
+  {
+    if (!isDateReady)
+    {
       logln("Task JWS waiting for date...");
       delay(10000);
       continue;
     }
     bool isFetchSuccess = false;
     xSemaphoreTake(mutex_con, portMAX_DELAY);
-    { 
+    {
       char link[100] = {'\0'};
-      sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%02d/%02d/%02d"), year, month+1, day);
+      sprintf_P(link, (PGM_P)F("https://api.myquran.com/v1/sholat/jadwal/1301/%02d/%02d/%02d"), year, month + 1, day);
       logln(link);
-      
+
       WiFiClientSecure client;
       HTTPClient http;
       client.setInsecure();
@@ -1966,19 +2150,23 @@ void taskJadwalSholat(void * parameter){
       // Your Domain name with URL path or IP address with path
       http.begin(client, link);
       int httpResponseCode = http.GET();
-      
-      if (httpResponseCode==200) {
-        logf("JWS HTTP Response code: %d",httpResponseCode);
+
+      if (httpResponseCode == 200)
+      {
+        logf("JWS HTTP Response code: %d", httpResponseCode);
         String jsonData = http.getString();
-    
+
         DynamicJsonDocument doc(768);
         DeserializationError error = deserializeJson(doc, jsonData);
 
-        if (error) {
+        if (error)
+        {
           log("JWS deserializeJson() failed: ");
           logln(reinterpret_cast<const char *>(error.f_str()));
           delay(20000);
-        } else {
+        }
+        else
+        {
           JsonObject data_jadwal = doc["data"]["jadwal"];
           // for testing only
           // sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), "02:37");// "04:37"
@@ -1989,17 +2177,17 @@ void taskJadwalSholat(void * parameter){
           // sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), "06:39");
           // sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), "07:58");
 
-          sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), data_jadwal["subuh"].as<const char*>());// "04:37"
-          sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), data_jadwal["terbit"].as<const char*>());// "04:37"
-          sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), data_jadwal["dhuha"].as<const char*>());// "04:37"
-          sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), data_jadwal["dzuhur"].as<const char*>());
-          sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), data_jadwal["ashar"].as<const char*>());
-          sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), data_jadwal["maghrib"].as<const char*>());
-          sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), data_jadwal["isya"].as<const char*>());
+          sprintf_P(data_jadwal_subuh, (PGM_P)F("%s:00"), data_jadwal["subuh"].as<const char *>());   // "04:37"
+          sprintf_P(data_jadwal_syuruk, (PGM_P)F("%s:00"), data_jadwal["terbit"].as<const char *>()); // "04:37"
+          sprintf_P(data_jadwal_dhuha, (PGM_P)F("%s:00"), data_jadwal["dhuha"].as<const char *>());   // "04:37"
+          sprintf_P(data_jadwal_dzuhur, (PGM_P)F("%s:00"), data_jadwal["dzuhur"].as<const char *>());
+          sprintf_P(data_jadwal_ashar, (PGM_P)F("%s:00"), data_jadwal["ashar"].as<const char *>());
+          sprintf_P(data_jadwal_maghrib, (PGM_P)F("%s:00"), data_jadwal["maghrib"].as<const char *>());
+          sprintf_P(data_jadwal_isya, (PGM_P)F("%s:00"), data_jadwal["isya"].as<const char *>());
 
           isJWSReady = true;
           isFetchSuccess = true;
-          
+
           log("Subuh : ");
           logln(data_jadwal_subuh);
           log("Syuruk : ");
@@ -2011,105 +2199,127 @@ void taskJadwalSholat(void * parameter){
           log("Ashar : ");
           logln(data_jadwal_ashar);
           log("Magrib : ");
-          logln(data_jadwal_maghrib);   
+          logln(data_jadwal_maghrib);
           log("Isya : ");
-          logln(data_jadwal_isya); 
+          logln(data_jadwal_isya);
         }
         doc.clear();
-      } else {
-        logf("JWS Error code: %d",httpResponseCode);
+      }
+      else
+      {
+        logf("JWS Error code: %d", httpResponseCode);
       }
 
       // Free resources
       http.end();
     }
     xSemaphoreGive(mutex_con);
-    logf("JWS stack size : %d",uxTaskGetStackHighWaterMark(NULL));
+    logf("JWS stack size : %d", uxTaskGetStackHighWaterMark(NULL));
 
-    if(isFetchSuccess){
+    if (isFetchSuccess)
+    {
       stopTaskCountdownJWS();
       startTaskCountdownJWS();
-      delayMSUntilAtTime(0,30,0);
-    } else {
-      delay(180000); //3 minutes
+      delayMSUntilAtTime(0, 30, 0);
+    }
+    else
+    {
+      delay(180000); // 3 minutes
     }
   }
 }
 
+#define ALERT_COUNTUP_SHOLAT 5 * 60 * 1000   /*5 menit*/
+#define ALERT_COUNTDOWN_DZIKIR 1 * 60 * 1000 /*5 menit*/
 
-#define ALERT_COUNTUP_SHOLAT 5*60*1000/*5 menit*/
-#define ALERT_COUNTDOWN_DZIKIR 1*60*1000/*5 menit*/
-
-
-void updateHijriForFirstHalfNight(){
-    //it's time to update hijri date
-    if(hijri_day+1 <= 29){
-      sprintf_P(str_hijri_date, (PGM_P)F("%d%s"), hijri_day+1,(hijri_day >= 10 ? str_hijri_date+2 : str_hijri_date+1));     
-      log("New Hijri Date :");
-      logln(str_hijri_date);
-      sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
-    }
+void updateHijriForFirstHalfNight()
+{
+  // it's time to update hijri date
+  if (hijri_day + 1 <= 29)
+  {
+    sprintf_P(str_hijri_date, (PGM_P)F("%d%s"), hijri_day + 1, (hijri_day >= 10 ? str_hijri_date + 2 : str_hijri_date + 1));
+    log("New Hijri Date :");
+    logln(str_hijri_date);
+    sprintf_P(str_date_full, (PGM_P)F("%s / %s"), str_date, str_hijri_date);
+  }
 }
 
-void taskCountDownJWS(void * parameter){
-  for(;;){
-    if(!isJWSReady){
+void taskCountDownJWS(void *parameter)
+{
+  for (;;)
+  {
+    if (!isJWSReady)
+    {
       logln("Task countdown-jws waiting for jws...");
       delay(10000);
       continue;
     }
-    std::array<unsigned long,4> clock = getArrayOfTime(str_clock_full);
-    std::array<unsigned long,4> subuh = getArrayOfTime(data_jadwal_subuh);
-    std::array<unsigned long,4> syuruk = getArrayOfTime(data_jadwal_syuruk);
-    std::array<unsigned long,4> dhuha = getArrayOfTime(data_jadwal_dhuha);
-    std::array<unsigned long,4> dzuhur = getArrayOfTime(data_jadwal_dzuhur);
-    std::array<unsigned long,4> ashar = getArrayOfTime(data_jadwal_ashar);
-    std::array<unsigned long,4> maghrib = getArrayOfTime(data_jadwal_maghrib);
-    std::array<unsigned long,4> isya = getArrayOfTime(data_jadwal_isya);
-    
+    std::array<unsigned long, 4> clock = getArrayOfTime(str_clock_full);
+    std::array<unsigned long, 4> subuh = getArrayOfTime(data_jadwal_subuh);
+    std::array<unsigned long, 4> syuruk = getArrayOfTime(data_jadwal_syuruk);
+    std::array<unsigned long, 4> dhuha = getArrayOfTime(data_jadwal_dhuha);
+    std::array<unsigned long, 4> dzuhur = getArrayOfTime(data_jadwal_dzuhur);
+    std::array<unsigned long, 4> ashar = getArrayOfTime(data_jadwal_ashar);
+    std::array<unsigned long, 4> maghrib = getArrayOfTime(data_jadwal_maghrib);
+    std::array<unsigned long, 4> isya = getArrayOfTime(data_jadwal_isya);
+
     int counter = 0;
 
-    memset(type_jws,'\0',sizeof(char)*8);
+    memset(type_jws, '\0', sizeof(char) * 8);
 
-    if((clock[3] < subuh[3] && clock[3] >= 0) || (clock[3] >= isya[3] && clock[3] <=86400)){
+    if ((clock[3] < subuh[3] && clock[3] >= 0) || (clock[3] >= isya[3] && clock[3] <= 86400))
+    {
       sprintf_P(type_jws, (PGM_P)F("subuh"));
-      counter = sDistanceFromTimeToTime(clock[0],clock[1],clock[2],subuh[0],subuh[1],subuh[2]);
+      counter = sDistanceFromTimeToTime(clock[0], clock[1], clock[2], subuh[0], subuh[1], subuh[2]);
 
-      if(clock[3] >= isya[3] && clock[3] <=86400){
+      if (clock[3] >= isya[3] && clock[3] <= 86400)
+      {
         updateHijriForFirstHalfNight();
       }
-
-    } else if(clock[3] < syuruk[3]){
+    }
+    else if (clock[3] < syuruk[3])
+    {
       sprintf_P(type_jws, (PGM_P)F("syuruk"));
       counter = syuruk[3] - clock[3];
 
-      //it's time to dzikir in the morning
-      setupDMDAtNowForLifeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Pagi",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
-      //resetDMDLoopIndex();
-    } else if(clock[3] < dhuha[3]){
+      // it's time to dzikir in the morning
+      setupDMDAtNowForLifeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Dzikir Pagi", false, count_down_jws, false, System5x7, 1000, ALERT_COUNTDOWN_DZIKIR, msDistanceFromNowToTime(syuruk[0], syuruk[1], syuruk[2]));
+      // resetDMDLoopIndex();
+    }
+    else if (clock[3] < dhuha[3])
+    {
       sprintf_P(type_jws, (PGM_P)F("dhuha"));
       counter = dhuha[3] - clock[3];
 
-      //it's time to sholat dhuha
-      setupDMDAtNowForLifeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Waktu Sholat Dhuha",false,str_clock_full,false,System5x7,1000,10000,(dzuhur[3]-dhuha[3]-(15*60))*1000);
-      //resetDMDLoopIndex();
-    } else if(clock[3] < dzuhur[3]){
+      // it's time to sholat dhuha
+      setupDMDAtNowForLifeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Waktu Sholat Dhuha", false, str_clock_full, false, System5x7, 1000, 10000, (dzuhur[3] - dhuha[3] - (15 * 60)) * 1000);
+      // resetDMDLoopIndex();
+    }
+    else if (clock[3] < dzuhur[3])
+    {
       sprintf_P(type_jws, (PGM_P)F("dzuhur"));
       counter = dzuhur[3] - clock[3];
-    } else if(clock[3] < ashar[3]){
+    }
+    else if (clock[3] < ashar[3])
+    {
       sprintf_P(type_jws, (PGM_P)F("ashar"));
       counter = ashar[3] - clock[3];
-    } else if(clock[3] < maghrib[3]){
+    }
+    else if (clock[3] < maghrib[3])
+    {
       sprintf_P(type_jws, (PGM_P)F("maghrib"));
       counter = maghrib[3] - clock[3];
 
-      //it's time to dzikir in the afternoon
-      setupDMDAtNowForLifeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Dzikir Petang",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
-      //resetDMDLoopIndex();
-      if(weekday == 5){
-        setupDMDAtNowForLifeTime(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,"Doa di akhir hari jumat",false,count_down_jws,false,System5x7,1000,ALERT_COUNTDOWN_DZIKIR,msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
+      // it's time to dzikir in the afternoon
+      setupDMDAtNowForLifeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Dzikir Petang", false, count_down_jws, false, System5x7, 1000, ALERT_COUNTDOWN_DZIKIR, msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
+      // resetDMDLoopIndex();
+      if (weekday == 5)
+      {
+        setupDMDAtNowForLifeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Doa di akhir hari jumat", false, count_down_jws, false, System5x7, 1000, ALERT_COUNTDOWN_DZIKIR, msDistanceFromNowToTime(maghrib[0], maghrib[1], maghrib[2]));
       }
-    } else if(clock[3] < isya[3]){
+    }
+    else if (clock[3] < isya[3])
+    {
       sprintf_P(type_jws, (PGM_P)F("isya"));
       counter = isya[3] - clock[3];
 
@@ -2117,61 +2327,69 @@ void taskCountDownJWS(void * parameter){
     }
 
     int leftSeconds = counter;
-    int hours = leftSeconds/3600;
+    int hours = leftSeconds / 3600;
     int minutes = 0;
     int seconds = 0;
-    if(hours > 0){
+    if (hours > 0)
+    {
       leftSeconds = leftSeconds % 3600;
     }
-    minutes = leftSeconds/60;
-    if(minutes > 0){
+    minutes = leftSeconds / 60;
+    if (minutes > 0)
+    {
       leftSeconds = leftSeconds % 60;
     }
     seconds = leftSeconds;
 
-    logf("Counter Countdown for %s : %d ==> %d - %d - %d",type_jws,counter,hours,minutes,seconds);
-    
-    logf("Countdown JWS stack size : %d",uxTaskGetStackHighWaterMark(NULL));
+    logf("Counter Countdown for %s : %d ==> %d - %d - %d", type_jws, counter, hours, minutes, seconds);
 
-    while(counter >= 0){
-      if(seconds==-1){
-        seconds=59;
+    logf("Countdown JWS stack size : %d", uxTaskGetStackHighWaterMark(NULL));
+
+    while (counter >= 0)
+    {
+      if (seconds == -1)
+      {
+        seconds = 59;
         minutes--;
       }
-      if(minutes==-1){
-        minutes=59;
+      if (minutes == -1)
+      {
+        minutes = 59;
         hours--;
       }
 
       sprintf_P(count_down_jws, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-      
+
       seconds--;
       counter--;
       delay(1000);
     }
 
-    //show alert
+    // show alert
     char count_sholat_alert[30] = {0};
     sprintf_P(count_sholat_alert, (PGM_P)F("Sudah masuk waktu %s"), type_jws);
-    setupDMDAtNowForIteration(true,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,getAllocatedString(count_sholat_alert),true,str_clock_full,false,System5x7,1000,ALERT_COUNTUP_SHOLAT,5);
+    setupDMDAtNowForIteration(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, getAllocatedString(count_sholat_alert), true, str_clock_full, false, System5x7, 1000, ALERT_COUNTUP_SHOLAT, 5);
     resetDMDLoopIndex();
     delay(5000);
   }
 }
 
-void startTaskCountdownJWS(){
+void startTaskCountdownJWS()
+{
   xTaskCreatePinnedToCore(
-        taskCountDownJWS,  // Function that should be called
-        "Countdown Jadwal Sholat",   // Name of the task (for debugging)
-        4500,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority
-        &taskCountdownJWSHandle, // Task handle
-        CONFIG_ARDUINO_RUNNING_CORE);
+      taskCountDownJWS,          // Function that should be called
+      "Countdown Jadwal Sholat", // Name of the task (for debugging)
+      4500,                      // Stack size (bytes)
+      NULL,                      // Parameter to pass
+      1,                         // Task priority
+      &taskCountdownJWSHandle,   // Task handle
+      CONFIG_ARDUINO_RUNNING_CORE);
 }
 
-void stopTaskCountdownJWS(){
-  if(taskCountdownJWSHandle != NULL){
+void stopTaskCountdownJWS()
+{
+  if (taskCountdownJWSHandle != NULL)
+  {
     vTaskDelete(taskCountdownJWSHandle);
   }
 }
@@ -2182,25 +2400,38 @@ void stopTaskCountdownJWS(){
 
 #define NASEHAT_COUNT_MAX 10
 
-boolean appendFile(const char * text, const char * fileName, boolean overWrite){
+boolean appendFile(const char *text, const char *fileName, boolean overWrite)
+{
   size_t result = 0;
   File file;
-  if(fileName != NULL){
-    if(!SPIFFS.exists(fileName)){
+  if (fileName != NULL)
+  {
+    if (!SPIFFS.exists(fileName))
+    {
       file = SPIFFS.open(fileName, FILE_WRITE);
-    } else {
-      if(overWrite){
-        if(SPIFFS.remove(fileName)){
+    }
+    else
+    {
+      if (overWrite)
+      {
+        if (SPIFFS.remove(fileName))
+        {
           file = SPIFFS.open(fileName, FILE_WRITE);
-        } else {
+        }
+        else
+        {
           logln("file cannot be removed, why?");
         }
-      } else {
+      }
+      else
+      {
         file = SPIFFS.open(fileName, FILE_APPEND);
       }
     }
-    if(file){
-      if(text != NULL){
+    if (file)
+    {
+      if (text != NULL)
+      {
         result = file.println(text);
       }
       file.close();
@@ -2209,15 +2440,20 @@ boolean appendFile(const char * text, const char * fileName, boolean overWrite){
   return result;
 }
 
-std::array<String,NASEHAT_COUNT_MAX> readFile(const char * fileName){
+std::array<String, NASEHAT_COUNT_MAX> readFile(const char *fileName)
+{
   File file;
-  std::array<String,NASEHAT_COUNT_MAX> stringResult;
-  if(fileName != NULL){
-    if(SPIFFS.exists(fileName)){
+  std::array<String, NASEHAT_COUNT_MAX> stringResult;
+  if (fileName != NULL)
+  {
+    if (SPIFFS.exists(fileName))
+    {
       file = SPIFFS.open(fileName, FILE_READ);
-      if(file){
+      if (file)
+      {
         int count = 0;
-        while(file.available() && count < NASEHAT_COUNT_MAX){
+        while (file.available() && count < NASEHAT_COUNT_MAX)
+        {
           String line = file.readStringUntil('\n');
           stringResult[count] = line;
           count++;
@@ -2229,53 +2465,58 @@ std::array<String,NASEHAT_COUNT_MAX> readFile(const char * fileName){
   return stringResult;
 }
 
-void listAllFiles(){
+void listAllFiles()
+{
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
-  while(file){
-      log("FILE: ");
-      logln(file.name());
-      file = root.openNextFile();
+  while (file)
+  {
+    log("FILE: ");
+    logln(file.name());
+    file = root.openNextFile();
   }
 }
 
 //=========================================================================
 //==================================   Task Firebase Scheduler  ===========
 //=========================================================================
-void setupDMDNasehat(const char * info){
-  setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL,info,true,"",false,Arial_Black_16,1000,10000,msDistanceFromNowToTime(23, 59, 0));
-  setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,str_date_full,false,str_clock_full,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
-  setupDMDAtNowForLifeTime(false,DMD_DATA_FREE_INDEX,DMD_TYPE_SCROLL_STATIC,type_jws,false,count_down_jws,false,System5x7,1000,10000, msDistanceFromNowToTime(23, 59, 0));
+void setupDMDNasehat(const char *info)
+{
+  setupDMDAtNowForLifeTime(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL, info, true, "", false, Arial_Black_16, 1000, 10000, msDistanceFromNowToTime(23, 59, 0));
+  setupDMDAtNowForLifeTime(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, str_date_full, false, str_clock_full, false, System5x7, 1000, 10000, msDistanceFromNowToTime(23, 59, 0));
+  setupDMDAtNowForLifeTime(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, type_jws, false, count_down_jws, false, System5x7, 1000, 10000, msDistanceFromNowToTime(23, 59, 0));
 }
 
 // Your Firebase Project Web API Key
 #define FB_API_KEY "AIzaSyAQ1OoPvV3_235dZPvZKW5CN-8pQghjJbQ"
 // Your Firebase Realtime database URL
 #define FB_DATABASE_URL "https://custom-speaker-murottal-default-rtdb.asia-southeast1.firebasedatabase.app/"
-void taskFirebase(void * parameter){
+void taskFirebase(void *parameter)
+{
   while (!isWiFiReady)
   {
     logln("Task Firebase nasehat waiting for wifi...");
     delay(20000);
   }
-  
+
   FirebaseData fbdo;
   FirebaseAuth auth;
   FirebaseConfig config;
-  std::array<String,10> nasehatVector;
+  std::array<String, 10> nasehatVector;
   String nasehatListPath = "/app/nasehat/list";
-  String fuid = ""; 
+  String fuid = "";
   bool isAuthenticated = false;
   config.api_key = FB_API_KEY;
   config.database_url = FB_DATABASE_URL;
 
   Firebase.enableClassicRequest(fbdo, true);
-  fbdo.setResponseSize(8192); //minimum size is 4096 bytes
+  fbdo.setResponseSize(8192); // minimum size is 4096 bytes
   logln("------------------------------------");
   logln("Firebase Sign up new user...");
-  xSemaphoreTake(mutex_con, portMAX_DELAY); 
+  xSemaphoreTake(mutex_con, portMAX_DELAY);
   // Sign in to firebase Anonymously
-  if (Firebase.signUp(&config, &auth, "", "")){
+  if (Firebase.signUp(&config, &auth, "", ""))
+  {
     logln("Firebase signup Success");
     isAuthenticated = true;
     fuid = auth.token.uid.c_str();
@@ -2287,61 +2528,70 @@ void taskFirebase(void * parameter){
   }
 
   // Assign the user sign in credentials
-  //auth.user.email = "ahsai001@gmail.com";
-  //auth.user.password = "123456ytrewq";
-  //isAuthenticated = true;
+  // auth.user.email = "ahsai001@gmail.com";
+  // auth.user.password = "123456ytrewq";
+  // isAuthenticated = true;
 
   // Assign the callback function for the long running token generation task, see addons/TokenHelper.h
   config.token_status_callback = tokenStatusCallback;
-  //config.signer.tokens.legacy_token = "kNVt4A1fFWNFifHbGMYqPR9hVwL4DE9S1Nyik9iG";
+  // config.signer.tokens.legacy_token = "kNVt4A1fFWNFifHbGMYqPR9hVwL4DE9S1Nyik9iG";
 
   // Initialise the firebase library
   Firebase.begin(&config, &auth);
   xSemaphoreGive(mutex_con);
 
-  //Firebase.reconnectWiFi(true);
-  logf("Firebase stack size : %d",uxTaskGetStackHighWaterMark(NULL));
-  //int test = 0;
-  for(;;){
+  // Firebase.reconnectWiFi(true);
+  logf("Firebase stack size : %d", uxTaskGetStackHighWaterMark(NULL));
+  // int test = 0;
+  for (;;)
+  {
     boolean isFbReady = false;
-    xSemaphoreTake(mutex_con, portMAX_DELAY); 
+    xSemaphoreTake(mutex_con, portMAX_DELAY);
     {
-      if(isWiFiReady){
+      if (isWiFiReady)
+      {
         isFbReady = Firebase.ready();
-        logf("Firebase ready or not ? %d",isFbReady);
-        if (isAuthenticated && isFbReady){
-            logln("------------------------------------");
-            logln("Firebase get data...");
+        logf("Firebase ready or not ? %d", isFbReady);
+        if (isAuthenticated && isFbReady)
+        {
+          logln("------------------------------------");
+          logln("Firebase get data...");
 
-            if(Firebase.getArray(fbdo, nasehatListPath)){
-              FirebaseJsonArray fbja = fbdo.jsonArray();
-              //appendFile(NULL,"/nasehat_firebase.txt",true);
-              for (size_t i = 0; i < fbja.size(); i++){
-                FirebaseJsonData result;
-                //result now used as temporary object to get the parse results
-                fbja.get(result, i);
+          if (Firebase.getArray(fbdo, nasehatListPath))
+          {
+            FirebaseJsonArray fbja = fbdo.jsonArray();
+            // appendFile(NULL,"/nasehat_firebase.txt",true);
+            for (size_t i = 0; i < fbja.size(); i++)
+            {
+              FirebaseJsonData result;
+              // result now used as temporary object to get the parse results
+              fbja.get(result, i);
 
-                //Print its value
-                logf("Array index: %d, type: %d, value: %s",i,result.type,result.to<String>().c_str());
+              // Print its value
+              logf("Array index: %d, type: %d, value: %s", i, result.type, result.to<String>().c_str());
 
-                const char * info = getAllocatedString(result.to<String>());
-                setupDMDNasehat(info);
+              const char *info = getAllocatedString(result.to<String>());
+              setupDMDNasehat(info);
 
-                //appendFile(info,"/nasehat_firebase.txt",false);
-              }
-
-              isFirebaseReady = true;
-              logln("Firebase get process...");
-            } else {
-              isFbReady = false;
+              // appendFile(info,"/nasehat_firebase.txt",false);
             }
-            logln("Firebase done data...");
+
+            isFirebaseReady = true;
+            logln("Firebase get process...");
+          }
+          else
+          {
+            isFbReady = false;
+          }
+          logln("Firebase done data...");
         }
       }
-      
-      if(!isFbReady && isFirebaseReady){
+
+      if (!isFbReady && isFirebaseReady)
+      {
         nasehatVector = readFile("/nasehat_firebase.txt");
-        for(int x=0; x<NASEHAT_COUNT_MAX; x++){
+        for (int x = 0; x < NASEHAT_COUNT_MAX; x++)
+        {
           String info = nasehatVector.at(x);
           Serial.println(info);
           setupDMDNasehat(info.c_str());
@@ -2349,14 +2599,20 @@ void taskFirebase(void * parameter){
       }
     }
     xSemaphoreGive(mutex_con);
-    if(!isFbReady){
-      if(!isWiFiReady){
+    if (!isFbReady)
+    {
+      if (!isWiFiReady)
+      {
         delay(10000);
-      } else {
+      }
+      else
+      {
         delay(60000);
       }
-    } else {
-      delayMSUntilAtTime(1,20,0);
+    }
+    else
+    {
+      delayMSUntilAtTime(1, 20, 0);
     }
   }
 }
@@ -2364,26 +2620,85 @@ void taskFirebase(void * parameter){
 //=========================================================================
 //==================================   Task Button / Touch Handle  ========
 //=========================================================================
-void taskButtonTouch(void * parameter){
-  
-  logf("Button Touch stack size : %d",uxTaskGetStackHighWaterMark(NULL));
-  for(;;){
-    uint16_t touchValue = touchRead(33);
-    bool isTouched = touchValue < 20;
-    //log("Touch Value : ");
-    //logln(touchValue);
-    if(isTouched){
-      //remove ssid & password in preferences setting
-      //preferences.remove("ssid");
-      //preferences.remove("password");
-      logln("Restarting after remove wifi credential");
-      //delay(3000);
-      //ESP.restart();
-    }
-    delay(1000);
-  }
+
+OneButton resetBtn(33, true);
+
+void longPressResetBtn()
+{
+    // remove ssid & password in preferences setting
+      if (taskWebHandle != NULL)
+        vTaskDelete(taskWebHandle);
+      if (taskWebSocketHandle != NULL)
+        vTaskDelete(taskWebSocketHandle);
+      if (taskClockHandle != NULL)
+        vTaskDelete(taskClockHandle);
+      if (taskCountdownJWSHandle != NULL)
+        vTaskDelete(taskCountdownJWSHandle);
+      if (taskDMDHandle != NULL)
+        vTaskDelete(taskDMDHandle);
+      if (taskFirebaseHandle != NULL)
+        vTaskDelete(taskFirebaseHandle);
+      if (taskJWSHandle != NULL)
+        vTaskDelete(taskJWSHandle);
+      if (taskLEDHandle != NULL)
+        vTaskDelete(taskLEDHandle);
+      if (taskKeepWiFiHandle != NULL)
+        vTaskDelete(taskKeepWiFiHandle);
+
+      // preferences.begin("settings", false);
+      preferences.remove("ssid");
+      preferences.remove("password");
+      // preferences.end();
+
+      logln("Please restart, remove wifi credential success");
+      
+      // delay(15000);
+      // ESP.restart();
 }
 
+void taskButtonTouch(void *parameter)
+{
+    logf("Button Touch stack size : %d", uxTaskGetStackHighWaterMark(NULL));
+    resetBtn.attachLongPressStop(longPressResetBtn);
+
+    for (;;)
+    {
+      resetBtn.tick();
+      delay(500);
+    }
+}
+
+// void taskButtonTouch(void * parameter){
+//   logf("Button Touch stack size : %d",uxTaskGetStackHighWaterMark(NULL));
+//   for(;;){
+//     uint16_t touchValue = touchRead(33);
+//     bool isTouched = touchValue < 8;
+//     logf("Touch Value : %d", touchValue);
+//     if(isTouched){
+//       //remove ssid & password in preferences setting
+//       if(taskWebHandle != NULL)vTaskDelete(taskWebHandle);
+//       if(taskWebSocketHandle != NULL)vTaskDelete(taskWebSocketHandle);
+//       if(taskClockHandle != NULL)vTaskDelete(taskClockHandle);
+//       if(taskCountdownJWSHandle != NULL)vTaskDelete(taskCountdownJWSHandle);
+//       if(taskDMDHandle != NULL)vTaskDelete(taskDMDHandle);
+//       if(taskFirebaseHandle != NULL)vTaskDelete(taskFirebaseHandle);
+//       if(taskJWSHandle != NULL)vTaskDelete(taskJWSHandle);
+//       if(taskLEDHandle != NULL)vTaskDelete(taskLEDHandle);
+//       if(taskKeepWiFiHandle != NULL)vTaskDelete(taskKeepWiFiHandle);
+
+//       //preferences.begin("settings", false);
+//       preferences.remove("ssid");
+//       preferences.remove("password");
+//       //preferences.end();
+
+//       logln("Please restart, remove wifi credential success");
+
+//       // delay(15000);
+//       //ESP.restart();
+//     }
+//     delay(5000);
+//   }
+// }
 
 //=========================================================================
 //==================================   Main App  ==========================
@@ -2391,10 +2706,11 @@ void taskButtonTouch(void * parameter){
 void setup()
 {
   Serial.begin(115200);
-  while(!Serial){
+  while (!Serial)
+  {
     delay(1000);
   }
-  
+
   // esp_pm_config_esp32_t pmConfig;
   // pmConfig.light_sleep_enable = true;
   // pmConfig.max_freq_mhz = 240;
@@ -2411,7 +2727,7 @@ void setup()
   //     break;
   // }
 
-  //setCpuFrequencyMhz(240);
+  // setCpuFrequencyMhz(240);
   logf("Modem Sleep : %d", WiFi.getSleep());
   logf("Freq CPU : %d", ESP.getCpuFreqMHz());
   logf("Cores : %d", ESP.getChipCores());
@@ -2422,51 +2738,58 @@ void setup()
   logf("SDK Version : %s", ESP.getSdkVersion());
   logf("Sketch Size : %d", ESP.getSketchSize());
 
-
   pinMode(built_in_led, OUTPUT);
 
-  mutex_con = xSemaphoreCreateMutex(); 
-  if (mutex_con == NULL) { 
-    logln("Mutex con can not be created"); 
+  mutex_con = xSemaphoreCreateMutex();
+  if (mutex_con == NULL)
+  {
+    logln("Mutex con can not be created");
   }
 
-  mutex_dmd = xSemaphoreCreateMutex(); 
-  if (mutex_dmd == NULL) { 
-    logln("Mutex dmd can not be created"); 
-  } 
+  mutex_dmd = xSemaphoreCreateMutex();
+  if (mutex_dmd == NULL)
+  {
+    logln("Mutex dmd can not be created");
+  }
 
-  mutex_clock = xSemaphoreCreateMutex(); 
-  if (mutex_clock == NULL) { 
-    logln("Mutex clock can not be created"); 
-  } 
+  mutex_clock = xSemaphoreCreateMutex();
+  if (mutex_clock == NULL)
+  {
+    logln("Mutex clock can not be created");
+  }
 
-  mutex_date = xSemaphoreCreateMutex(); 
-  if (mutex_date == NULL) { 
-    logln("Mutex date can not be created"); 
-  } 
- 
+  mutex_date = xSemaphoreCreateMutex();
+  if (mutex_date == NULL)
+  {
+    logln("Mutex date can not be created");
+  }
+
   preferences.begin("settings", false);
-  //ssid = preferences.getString("ssid","3mbd3vk1d-2");
-  //password = preferences.getString("password","marsupiarmadomah3716");
-  ssid = preferences.getString("ssid","");
-  password = preferences.getString("password","");
+  // ssid = preferences.getString("ssid","3mbd3vk1d-2");
+  // password = preferences.getString("password","marsupiarmadomah3716");
+  ssid = preferences.getString("ssid", "");
+  password = preferences.getString("password", "");
+  // preferences.end();
 
-  while(!SPIFFS.begin(true)){
+  while (!SPIFFS.begin(true))
+  {
     logln("An Error has occurred while mounting SPIFFS");
     return;
   }
   isSPIFFSReady = true;
 
-  // xTaskCreatePinnedToCore(
-  //     taskButtonTouch,  // Function that should be called
-  //     "Button/Touch Action",   // Name of the task (for debugging)
-  //     1000,           // Stack size (bytes)
-  //     NULL,           // Parameter to pass
-  //     1,              // Task priority
-  //     &taskButtonTouchHandle, // Task handle
-  //     CONFIG_ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(
+      taskButtonTouch,        // Function that should be called
+      "Button/Touch Action",  // Name of the task (for debugging)
+      1500,                   // Stack size (bytes)
+      NULL,                   // Parameter to pass
+      1,                      // Task priority
+      &taskButtonTouchHandle, // Task handle
+      CONFIG_ARDUINO_RUNNING_CORE);
+  delay(5000);
 
-  if(ssid.length() <= 0 || password.length() <= 0){
+  if (ssid.length() <= 0 || password.length() <= 0)
+  {
     WiFi.mode(WIFI_AP);
     IPAddress IP = {192, 168, 48, 81};
     IPAddress NMask = {255, 255, 255, 0};
@@ -2487,16 +2810,17 @@ void setup()
 
     startTaskDMD();
     delay(6000);
-  } else {
+  }
+  else
+  {
     xTaskCreatePinnedToCore(
-        taskKeepWiFiAlive,  // Function that should be called
-        "Keep WiFi Alive",  // Name of the task (for debugging)
-        3200,               // Stack size (bytes)
-        NULL,               // Parameter to pass
-        1,                  // Task priority
+        taskKeepWiFiAlive,   // Function that should be called
+        "Keep WiFi Alive",   // Name of the task (for debugging)
+        3200,                // Stack size (bytes)
+        NULL,                // Parameter to pass
+        1,                   // Task priority
         &taskKeepWiFiHandle, // Task handle
-        CONFIG_ARDUINO_RUNNING_CORE
-    );
+        CONFIG_ARDUINO_RUNNING_CORE);
     delay(5000);
 
     startTaskWebServer();
@@ -2506,32 +2830,32 @@ void setup()
     delay(5000);
 
     xTaskCreatePinnedToCore(
-        taskClock,  // Function that should be called
-        "Clock",   // Name of the task (for debugging)
-        3400,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority
+        taskClock,        // Function that should be called
+        "Clock",          // Name of the task (for debugging)
+        3400,             // Stack size (bytes)
+        NULL,             // Parameter to pass
+        1,                // Task priority
         &taskClockHandle, // Task handle
         0);
     delay(5000);
 
     xTaskCreatePinnedToCore(
-        taskDate,  // Function that should be called
-        "Date",   // Name of the task (for debugging)
-        7000,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority
+        taskDate,        // Function that should be called
+        "Date",          // Name of the task (for debugging)
+        7000,            // Stack size (bytes)
+        NULL,            // Parameter to pass
+        1,               // Task priority
         &taskDateHandle, // Task handle
         0);
     delay(5000);
 
     xTaskCreatePinnedToCore(
-        taskJadwalSholat,  // Function that should be called
-        "Jadwal Sholat",   // Name of the task (for debugging)
-        5500,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority
-        &taskJWSHandle, // Task handle
+        taskJadwalSholat, // Function that should be called
+        "Jadwal Sholat",  // Name of the task (for debugging)
+        5500,             // Stack size (bytes)
+        NULL,             // Parameter to pass
+        1,                // Task priority
+        &taskJWSHandle,   // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
     delay(5000);
 
@@ -2540,18 +2864,19 @@ void setup()
 
     xTaskCreatePinnedToCore(
         taskFirebase,        // Function that should be called
-        "Firebase",  // Name of the task (for debugging)
-        65000,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        1,              // Task priority
+        "Firebase",          // Name of the task (for debugging)
+        65000,               // Stack size (bytes)
+        NULL,                // Parameter to pass
+        1,                   // Task priority
         &taskFirebaseHandle, // Task handle
         CONFIG_ARDUINO_RUNNING_CORE);
-      delay(5000);
+    delay(5000);
   }
 
-  //vTaskDelete(NULL);
+  // vTaskDelete(NULL);
 }
 
-void loop(){
-  //do nothing, everything is doing in task
+void loop()
+{
+  // do nothing, everything is doing in task
 }
