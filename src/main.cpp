@@ -499,6 +499,10 @@ void setupDMDdata(bool isImportant, uint8_t reservedIndex, DMDType type, const c
   xSemaphoreGive(mutex_dmd);
 }
 
+
+void stopTaskWebSocketServer();
+void stopTaskCountdownJWS();
+
 void resetDMDData(uint8_t index)
 {
   DMD_Data *item = dmd_data_list + index;
@@ -1191,6 +1195,7 @@ void stopTaskDMD()
   if (taskDMDHandle != NULL)
   {
     vTaskDelete(taskDMDHandle);
+    taskDMDHandle = NULL;
   }
 }
 
@@ -1230,6 +1235,7 @@ void stopTaskToggleLED()
   if (taskLEDHandle != NULL)
   {
     vTaskDelete(taskLEDHandle);
+    taskLEDHandle = NULL;
   }
   digitalWrite(built_in_led, HIGH);
 }
@@ -1700,12 +1706,33 @@ void taskWebServer(void *parameter)
 
   server.on("/forgetwifi", []()
             {
+              
+      stopTaskWebSocketServer();
+      if (taskClockHandle != NULL){
+        vTaskDelete(taskClockHandle);
+        taskClockHandle = NULL;
+      }
+      stopTaskCountdownJWS();
+      stopTaskDMD();
+      if (taskFirebaseHandle != NULL){
+        vTaskDelete(taskFirebaseHandle);
+        taskFirebaseHandle = NULL;
+      }
+      if (taskJWSHandle != NULL){
+        vTaskDelete(taskJWSHandle);
+        taskJWSHandle = NULL;
+      }
+      stopTaskToggleLED();
+
+
+              delay(1000);
     // preferences.begin("settings", false);
     preferences.remove("ssid");
     preferences.remove("password");
     // preferences.end(); }); 
     
     server.send(200, "text/plain", "forget wifi berhasil, silakan restart");
+    //startTaskDMD();
     // ESP.restart(); 
             });
 
@@ -1740,6 +1767,7 @@ void stopTaskWebSocketServer()
   if (taskWebSocketHandle != NULL)
   {
     vTaskDelete(taskWebSocketHandle);
+    taskWebSocketHandle = NULL;
   }
 }
 
@@ -1760,6 +1788,7 @@ void stopTaskWebServer()
   if (taskWebHandle != NULL)
   {
     vTaskDelete(taskWebHandle);
+    taskWebHandle = NULL;
   }
 }
 
@@ -2391,6 +2420,7 @@ void stopTaskCountdownJWS()
   if (taskCountdownJWSHandle != NULL)
   {
     vTaskDelete(taskCountdownJWSHandle);
+    taskCountdownJWSHandle = NULL;
   }
 }
 
@@ -2623,32 +2653,38 @@ void taskFirebase(void *parameter)
 
 OneButton resetBtn(33, true);
 
-void longPressResetBtn()
+void clickPressBtn(){
+      //stopTaskWebServer();
+      //stopTaskWebSocketServer();
+      // if (taskClockHandle != NULL){
+      //   vTaskDelete(taskClockHandle);
+      //   taskClockHandle = NULL;
+      // }
+      // stopTaskCountdownJWS();
+      stopTaskDMD();
+      if (taskFirebaseHandle != NULL){
+        vTaskDelete(taskFirebaseHandle);
+        taskFirebaseHandle = NULL;
+      }
+      // if (taskJWSHandle != NULL){
+      //   vTaskDelete(taskJWSHandle);
+      //   taskJWSHandle = NULL;
+      // }
+      // stopTaskToggleLED();
+      // if (taskKeepWiFiHandle != NULL){
+      //   vTaskDelete(taskKeepWiFiHandle);
+      //   taskKeepWiFiHandle = NULL;
+      // }
+}
+
+void longPressBtn()
 {
     // remove ssid & password in preferences setting
-      if (taskWebHandle != NULL)
-        vTaskDelete(taskWebHandle);
-      if (taskWebSocketHandle != NULL)
-        vTaskDelete(taskWebSocketHandle);
-      if (taskClockHandle != NULL)
-        vTaskDelete(taskClockHandle);
-      if (taskCountdownJWSHandle != NULL)
-        vTaskDelete(taskCountdownJWSHandle);
-      if (taskDMDHandle != NULL)
-        vTaskDelete(taskDMDHandle);
-      if (taskFirebaseHandle != NULL)
-        vTaskDelete(taskFirebaseHandle);
-      if (taskJWSHandle != NULL)
-        vTaskDelete(taskJWSHandle);
-      if (taskLEDHandle != NULL)
-        vTaskDelete(taskLEDHandle);
-      if (taskKeepWiFiHandle != NULL)
-        vTaskDelete(taskKeepWiFiHandle);
-
-      // preferences.begin("settings", false);
+      
+      //preferences.begin("settings", false);
       preferences.remove("ssid");
       preferences.remove("password");
-      // preferences.end();
+      //preferences.end();
 
       logln("Please restart, remove wifi credential success");
       
@@ -2659,13 +2695,13 @@ void longPressResetBtn()
 void taskButtonTouch(void *parameter)
 {
     logf("Button Touch stack size : %d", uxTaskGetStackHighWaterMark(NULL));
-    resetBtn.attachLongPressStop(longPressResetBtn);
-
-    for (;;)
-    {
-      resetBtn.tick();
-      delay(500);
-    }
+    resetBtn.attachDuringLongPress(longPressBtn);
+    resetBtn.attachClick(clickPressBtn);
+    // for (;;)
+    // {
+    //   resetBtn.tick();
+    //   delay(500);
+    // }
 }
 
 // void taskButtonTouch(void * parameter){
@@ -2769,7 +2805,7 @@ void setup()
   // password = preferences.getString("password","marsupiarmadomah3716");
   ssid = preferences.getString("ssid", "");
   password = preferences.getString("password", "");
-  // preferences.end();
+  //preferences.end();
 
   while (!SPIFFS.begin(true))
   {
@@ -2778,15 +2814,15 @@ void setup()
   }
   isSPIFFSReady = true;
 
-  xTaskCreatePinnedToCore(
-      taskButtonTouch,        // Function that should be called
-      "Button/Touch Action",  // Name of the task (for debugging)
-      1500,                   // Stack size (bytes)
-      NULL,                   // Parameter to pass
-      1,                      // Task priority
-      &taskButtonTouchHandle, // Task handle
-      CONFIG_ARDUINO_RUNNING_CORE);
-  delay(5000);
+  // xTaskCreatePinnedToCore(
+  //     taskButtonTouch,        // Function that should be called
+  //     "Button/Touch Action",  // Name of the task (for debugging)
+  //     1500,                   // Stack size (bytes)
+  //     NULL,                   // Parameter to pass
+  //     1,                      // Task priority
+  //     &taskButtonTouchHandle, // Task handle
+  //     CONFIG_ARDUINO_RUNNING_CORE);
+  // delay(5000);
 
   if (ssid.length() <= 0 || password.length() <= 0)
   {
@@ -2799,14 +2835,14 @@ void setup()
     {
       logln("speaker-murottal.local is available");
     }
-    startTaskToggleLED();
-    delay(5000);
+    //startTaskToggleLED();
+    //delay(5000);
 
     startTaskWebServer();
     delay(5000);
 
-    startTaskWebSocketServer();
-    delay(5000);
+    //startTaskWebSocketServer();
+    //delay(5000);
 
     startTaskDMD();
     delay(6000);
@@ -2874,9 +2910,12 @@ void setup()
   }
 
   // vTaskDelete(NULL);
+  taskButtonTouch(NULL);
 }
 
 void loop()
 {
   // do nothing, everything is doing in task
+  resetBtn.tick();
+  delay(500);
 }
