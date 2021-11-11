@@ -37,22 +37,22 @@
 //=========================================================================
 
 // section code : DMD, toggle led, wifi alive, web server, Clock, JWS
-TaskHandle_t taskLEDHandle;
-TaskHandle_t taskWebHandle;
-TaskHandle_t taskKeepWiFiHandle;
-TaskHandle_t taskDMDHandle;
-TaskHandle_t taskClockHandle;
-TaskHandle_t taskDateHandle;
-TaskHandle_t taskJWSHandle;
-TaskHandle_t taskCountdownJWSHandle;
-TaskHandle_t taskButtonTouchHandle;
-TaskHandle_t taskFirebaseHandle;
-TaskHandle_t taskWebSocketHandle;
+TaskHandle_t taskLEDHandle = NULL;
+TaskHandle_t taskWebHandle = NULL;
+TaskHandle_t taskKeepWiFiHandle = NULL;
+TaskHandle_t taskDMDHandle = NULL;
+TaskHandle_t taskClockHandle = NULL;
+TaskHandle_t taskDateHandle = NULL;
+TaskHandle_t taskJWSHandle = NULL;
+TaskHandle_t taskCountdownJWSHandle = NULL;
+TaskHandle_t taskButtonTouchHandle = NULL;
+TaskHandle_t taskFirebaseHandle = NULL;
+TaskHandle_t taskWebSocketHandle = NULL;
 
-SemaphoreHandle_t mutex_con;
-SemaphoreHandle_t mutex_dmd;
-SemaphoreHandle_t mutex_clock;
-SemaphoreHandle_t mutex_date;
+SemaphoreHandle_t mutex_con = NULL;
+SemaphoreHandle_t mutex_dmd = NULL;
+SemaphoreHandle_t mutex_clock = NULL;
+SemaphoreHandle_t mutex_date = NULL;
 
 Preferences preferences;
 
@@ -1194,9 +1194,110 @@ void stopTaskDMD()
 {
   if (taskDMDHandle != NULL)
   {
+    for(int i=0;i<DMD_DATA_SIZE;i++){
+      resetDMDData(i);
+    }
     vTaskDelete(taskDMDHandle);
     taskDMDHandle = NULL;
   }
+}
+
+void startTaskKeepWifi(){
+  xTaskCreatePinnedToCore(
+        taskKeepWiFiAlive,   // Function that should be called
+        "Keep WiFi Alive",   // Name of the task (for debugging)
+        3200,                // Stack size (bytes)
+        NULL,                // Parameter to pass
+        1,                   // Task priority
+        &taskKeepWiFiHandle, // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE);
+}
+
+void stopTaskKeepWifi(){
+  if (taskKeepWiFiHandle != NULL){
+    vTaskDelete(taskKeepWiFiHandle);
+    taskKeepWiFiHandle = NULL;
+  }
+}
+
+void startTaskFirebase(){
+  xTaskCreatePinnedToCore(
+        taskFirebase,        // Function that should be called
+        "Firebase",          // Name of the task (for debugging)
+        65000,               // Stack size (bytes)
+        NULL,                // Parameter to pass
+        1,                   // Task priority
+        &taskFirebaseHandle, // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE);
+}
+
+void stopTaskFirebase(){
+  if (taskFirebaseHandle != NULL){
+    vTaskDelete(taskFirebaseHandle);
+    taskFirebaseHandle = NULL;
+  }
+}
+
+void startTaskClock(){
+  xTaskCreatePinnedToCore(
+        taskClock,        // Function that should be called
+        "Clock",          // Name of the task (for debugging)
+        3400,             // Stack size (bytes)
+        NULL,             // Parameter to pass
+        1,                // Task priority
+        &taskClockHandle, // Task handle
+        0);
+}
+
+void stopTaskClock(){
+  if (taskClockHandle != NULL){
+    vTaskDelete(taskClockHandle);
+    taskClockHandle = NULL;
+  }
+}
+
+void startTaskJWS(){
+  xTaskCreatePinnedToCore(
+        taskJadwalSholat, // Function that should be called
+        "Jadwal Sholat",  // Name of the task (for debugging)
+        5500,             // Stack size (bytes)
+        NULL,             // Parameter to pass
+        1,                // Task priority
+        &taskJWSHandle,   // Task handle
+        CONFIG_ARDUINO_RUNNING_CORE);
+}
+
+void startTaskDate(){
+  xTaskCreatePinnedToCore(
+        taskDate,        // Function that should be called
+        "Date",          // Name of the task (for debugging)
+        7000,            // Stack size (bytes)
+        NULL,            // Parameter to pass
+        1,               // Task priority
+        &taskDateHandle, // Task handle
+        0);
+}
+
+void stopTaskJWS(){
+  if (taskJWSHandle != NULL){
+    vTaskDelete(taskJWSHandle);
+    taskJWSHandle = NULL;
+  }
+}
+
+void stopTasksBeforePreferencesChanged(){
+      stopTaskDMD();
+      stopTaskFirebase();
+      stopTaskCountdownJWS();
+      stopTaskWebSocketServer();
+      stopTaskToggleLED();
+}
+void startTasksAfterPreferencesChanged(){
+      startTaskToggleLED();
+      startTaskWebSocketServer();
+      startTaskCountdownJWS();
+      startTaskFirebase();
+      startTaskDMD();
 }
 
 //================================================================================
@@ -1689,51 +1790,31 @@ void taskWebServer(void *parameter)
             if (server.hasArg("ssid")&& server.hasArg("password")) {
               String ssid = server.arg("ssid");
               String password = server.arg("password");
-              stopTaskDMD();
+              
+              stopTasksBeforePreferencesChanged();
               delay(1000);
-
               //preferences.begin("settings", false);
               preferences.putString("ssid", ssid);
               preferences.putString("password", password);
               //preferences.end();
 
               server.send(200, "text/plain", "setting wifi berhasil, silakan restart");
-              startTaskDMD();
               //ESP.restart();
             } else {
               server.send(200, "text/html", index_html_wifi);
             } });
 
   server.on("/forgetwifi", []()
-            {
-              
-      stopTaskWebSocketServer();
-      if (taskClockHandle != NULL){
-        vTaskDelete(taskClockHandle);
-        taskClockHandle = NULL;
-      }
-      stopTaskCountdownJWS();
-      stopTaskDMD();
-      if (taskFirebaseHandle != NULL){
-        vTaskDelete(taskFirebaseHandle);
-        taskFirebaseHandle = NULL;
-      }
-      if (taskJWSHandle != NULL){
-        vTaskDelete(taskJWSHandle);
-        taskJWSHandle = NULL;
-      }
-      stopTaskToggleLED();
-
-
-              delay(1000);
-    // preferences.begin("settings", false);
-    preferences.remove("ssid");
-    preferences.remove("password");
-    // preferences.end(); }); 
-    
-    server.send(200, "text/plain", "forget wifi berhasil, silakan restart");
-    //startTaskDMD();
-    // ESP.restart(); 
+            {  
+      stopTasksBeforePreferencesChanged();
+      delay(1000);
+      // preferences.begin("settings", false);
+      preferences.remove("ssid");
+      preferences.remove("password");
+      // preferences.end(); }); 
+      
+      server.send(200, "text/plain", "forget wifi berhasil, silakan restart");
+      // ESP.restart(); 
             });
 
   server.on("/logs", []()
@@ -1789,6 +1870,14 @@ void stopTaskWebServer()
   {
     vTaskDelete(taskWebHandle);
     taskWebHandle = NULL;
+  }
+}
+
+void stopTaskDate(){
+  if (taskDateHandle != NULL)
+  {
+    vTaskDelete(taskDateHandle);
+    taskDateHandle = NULL;
   }
 }
 
@@ -2654,33 +2743,14 @@ void taskFirebase(void *parameter)
 OneButton resetBtn(33, true);
 
 void clickPressBtn(){
-      //stopTaskWebServer();
-      //stopTaskWebSocketServer();
-      // if (taskClockHandle != NULL){
-      //   vTaskDelete(taskClockHandle);
-      //   taskClockHandle = NULL;
-      // }
-      // stopTaskCountdownJWS();
-      stopTaskDMD();
-      if (taskFirebaseHandle != NULL){
-        vTaskDelete(taskFirebaseHandle);
-        taskFirebaseHandle = NULL;
-      }
-      // if (taskJWSHandle != NULL){
-      //   vTaskDelete(taskJWSHandle);
-      //   taskJWSHandle = NULL;
-      // }
-      // stopTaskToggleLED();
-      // if (taskKeepWiFiHandle != NULL){
-      //   vTaskDelete(taskKeepWiFiHandle);
-      //   taskKeepWiFiHandle = NULL;
-      // }
+    //stopTaskDMD();
 }
 
 void longPressBtn()
 {
     // remove ssid & password in preferences setting
-      
+      stopTasksBeforePreferencesChanged();
+
       //preferences.begin("settings", false);
       preferences.remove("ssid");
       preferences.remove("password");
@@ -2697,11 +2767,11 @@ void taskButtonTouch(void *parameter)
     logf("Button Touch stack size : %d", uxTaskGetStackHighWaterMark(NULL));
     resetBtn.attachDuringLongPress(longPressBtn);
     resetBtn.attachClick(clickPressBtn);
-    // for (;;)
-    // {
-    //   resetBtn.tick();
-    //   delay(500);
-    // }
+    for (;;)
+    {
+      resetBtn.tick();
+      delay(500);
+    }
 }
 
 // void taskButtonTouch(void * parameter){
@@ -2711,17 +2781,6 @@ void taskButtonTouch(void *parameter)
 //     bool isTouched = touchValue < 8;
 //     logf("Touch Value : %d", touchValue);
 //     if(isTouched){
-//       //remove ssid & password in preferences setting
-//       if(taskWebHandle != NULL)vTaskDelete(taskWebHandle);
-//       if(taskWebSocketHandle != NULL)vTaskDelete(taskWebSocketHandle);
-//       if(taskClockHandle != NULL)vTaskDelete(taskClockHandle);
-//       if(taskCountdownJWSHandle != NULL)vTaskDelete(taskCountdownJWSHandle);
-//       if(taskDMDHandle != NULL)vTaskDelete(taskDMDHandle);
-//       if(taskFirebaseHandle != NULL)vTaskDelete(taskFirebaseHandle);
-//       if(taskJWSHandle != NULL)vTaskDelete(taskJWSHandle);
-//       if(taskLEDHandle != NULL)vTaskDelete(taskLEDHandle);
-//       if(taskKeepWiFiHandle != NULL)vTaskDelete(taskKeepWiFiHandle);
-
 //       //preferences.begin("settings", false);
 //       preferences.remove("ssid");
 //       preferences.remove("password");
@@ -2803,6 +2862,7 @@ void setup()
   preferences.begin("settings", false);
   // ssid = preferences.getString("ssid","3mbd3vk1d-2");
   // password = preferences.getString("password","marsupiarmadomah3716");
+
   ssid = preferences.getString("ssid", "");
   password = preferences.getString("password", "");
   //preferences.end();
@@ -2814,15 +2874,15 @@ void setup()
   }
   isSPIFFSReady = true;
 
-  // xTaskCreatePinnedToCore(
-  //     taskButtonTouch,        // Function that should be called
-  //     "Button/Touch Action",  // Name of the task (for debugging)
-  //     1500,                   // Stack size (bytes)
-  //     NULL,                   // Parameter to pass
-  //     1,                      // Task priority
-  //     &taskButtonTouchHandle, // Task handle
-  //     CONFIG_ARDUINO_RUNNING_CORE);
-  // delay(5000);
+  xTaskCreatePinnedToCore(
+      taskButtonTouch,        // Function that should be called
+      "Button/Touch Action",  // Name of the task (for debugging)
+      1500,                   // Stack size (bytes)
+      NULL,                   // Parameter to pass
+      1,                      // Task priority
+      &taskButtonTouchHandle, // Task handle
+      CONFIG_ARDUINO_RUNNING_CORE);
+  delay(5000);
 
   if (ssid.length() <= 0 || password.length() <= 0)
   {
@@ -2835,28 +2895,8 @@ void setup()
     {
       logln("speaker-murottal.local is available");
     }
-    //startTaskToggleLED();
-    //delay(5000);
 
-    startTaskWebServer();
-    delay(5000);
-
-    //startTaskWebSocketServer();
-    //delay(5000);
-
-    startTaskDMD();
-    delay(6000);
-  }
-  else
-  {
-    xTaskCreatePinnedToCore(
-        taskKeepWiFiAlive,   // Function that should be called
-        "Keep WiFi Alive",   // Name of the task (for debugging)
-        3200,                // Stack size (bytes)
-        NULL,                // Parameter to pass
-        1,                   // Task priority
-        &taskKeepWiFiHandle, // Task handle
-        CONFIG_ARDUINO_RUNNING_CORE);
+    startTaskToggleLED();
     delay(5000);
 
     startTaskWebServer();
@@ -2865,57 +2905,39 @@ void setup()
     startTaskWebSocketServer();
     delay(5000);
 
-    xTaskCreatePinnedToCore(
-        taskClock,        // Function that should be called
-        "Clock",          // Name of the task (for debugging)
-        3400,             // Stack size (bytes)
-        NULL,             // Parameter to pass
-        1,                // Task priority
-        &taskClockHandle, // Task handle
-        0);
+    startTaskDMD();
+    delay(6000);
+  }
+  else
+  {
+    startTaskKeepWifi();
     delay(5000);
 
-    xTaskCreatePinnedToCore(
-        taskDate,        // Function that should be called
-        "Date",          // Name of the task (for debugging)
-        7000,            // Stack size (bytes)
-        NULL,            // Parameter to pass
-        1,               // Task priority
-        &taskDateHandle, // Task handle
-        0);
+    startTaskWebServer();
     delay(5000);
 
-    xTaskCreatePinnedToCore(
-        taskJadwalSholat, // Function that should be called
-        "Jadwal Sholat",  // Name of the task (for debugging)
-        5500,             // Stack size (bytes)
-        NULL,             // Parameter to pass
-        1,                // Task priority
-        &taskJWSHandle,   // Task handle
-        CONFIG_ARDUINO_RUNNING_CORE);
+    startTaskWebSocketServer();
+    delay(5000);
+
+    startTaskClock();
+    delay(5000);
+
+    startTaskDate();
+    delay(5000);
+
+    startTaskJWS();
     delay(5000);
 
     startTaskDMD();
     delay(10000);
 
-    xTaskCreatePinnedToCore(
-        taskFirebase,        // Function that should be called
-        "Firebase",          // Name of the task (for debugging)
-        65000,               // Stack size (bytes)
-        NULL,                // Parameter to pass
-        1,                   // Task priority
-        &taskFirebaseHandle, // Task handle
-        CONFIG_ARDUINO_RUNNING_CORE);
+    startTaskFirebase();
     delay(5000);
   }
-
   // vTaskDelete(NULL);
-  taskButtonTouch(NULL);
 }
 
 void loop()
 {
   // do nothing, everything is doing in task
-  resetBtn.tick();
-  delay(500);
 }
