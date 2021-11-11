@@ -108,6 +108,18 @@ char count_down_jws[9] = "--:--:--"; // 04:30:00
 // 22.30 - 01.45 : -21 jam + 15 menit + 24 jam
 // 22.30 - 01.15 : -21 jam + -15 menit + 24 jam
 
+
+
+void taskKeepWiFiAlive(void *parameter);
+void taskFirebase(void *parameter);
+void taskClock(void *parameter);
+void taskJadwalSholat(void *parameter);
+void taskDate(void *parameter);
+void stopTaskToggleLED();
+void startTaskToggleLED();
+void startTaskWebSocketServer();
+void startTaskCountdownJWS();
+
 //================================================================================
 //==================================   Task Web Socket Server  ===================
 //================================================================================
@@ -390,7 +402,7 @@ struct DMD_Data
   char *text2 = NULL;
   uint8_t speed2 = 0;
   bool need_free_text2 = false;
-  const uint8_t *font;
+  const uint8_t *font = NULL;
   unsigned long delay_inMS = 0;     // delay refresh dalam setiap kemunculan
   unsigned long duration_inMS = 0;  // durasi setiap kemunculan
   int max_count = 1;                // jumlah kemunculan, -1 for unlimited
@@ -400,6 +412,8 @@ struct DMD_Data
 };
 
 bool need_reset_dmd_loop_index = false;
+bool allowed_dmd_loop = true;
+
 int dmd_loop_index = 0;                       // we can change this runtime
 struct DMD_Data dmd_data_list[DMD_DATA_SIZE]; // index 0 - 5 for important message
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN);
@@ -431,6 +445,14 @@ void marqueeText(const uint8_t *font, const char *text, int top)
 void resetDMDLoopIndex()
 { // use this function to make show important message right now
   need_reset_dmd_loop_index = true;
+}
+
+void stopDMDLoop(){
+  allowed_dmd_loop = false;
+}
+
+void startDMDLoop(){
+  allowed_dmd_loop = true;
 }
 
 uint8_t getAvailableDMDIndex(bool isImportant, uint8_t reservedIndex)
@@ -506,16 +528,23 @@ void stopTaskCountdownJWS();
 void resetDMDData(uint8_t index)
 {
   DMD_Data *item = dmd_data_list + index;
+  logf("reset 0 %d", index);
   if (item->type >= 0 && item->need_free_text1)
   {
+    logf("reset 1 %d", index);
     free(item->text1);
     item->text1 = NULL;
+    logf("reset 1 end %d", index);
   }
   if (item->type >= 0 && item->need_free_text2)
   {
+    logf("reset 2 %d", index);
     free(item->text2);
     item->text2 = NULL;
+    logf("reset 2 end %d", index);
   }
+
+  logf("reset x end %d", index);
   item->type = -1;
   item->speed1 = 0;
   item->need_free_text1 = false;
@@ -809,7 +838,7 @@ void taskDMD(void *parameter)
     //  10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
     // dmd.drawBox(0, 0, (32 * DISPLAYS_ACROSS) - 1, (16 * DISPLAYS_DOWN) - 1, GRAPHICS_TOGGLE);
 
-    for (dmd_loop_index = 0; dmd_loop_index < DMD_DATA_SIZE; dmd_loop_index++)
+    for (dmd_loop_index = 0; dmd_loop_index < DMD_DATA_SIZE && allowed_dmd_loop; dmd_loop_index++)
     {
       if (need_reset_dmd_loop_index)
       {
@@ -1194,9 +1223,13 @@ void stopTaskDMD()
 {
   if (taskDMDHandle != NULL)
   {
+    stopDMDLoop();
+
     for(int i=0;i<DMD_DATA_SIZE;i++){
+      logf("reset %d", i);
       resetDMDData(i);
     }
+
     vTaskDelete(taskDMDHandle);
     taskDMDHandle = NULL;
   }
@@ -2874,16 +2907,6 @@ void setup()
   }
   isSPIFFSReady = true;
 
-  xTaskCreatePinnedToCore(
-      taskButtonTouch,        // Function that should be called
-      "Button/Touch Action",  // Name of the task (for debugging)
-      1500,                   // Stack size (bytes)
-      NULL,                   // Parameter to pass
-      1,                      // Task priority
-      &taskButtonTouchHandle, // Task handle
-      CONFIG_ARDUINO_RUNNING_CORE);
-  delay(5000);
-
   if (ssid.length() <= 0 || password.length() <= 0)
   {
     WiFi.mode(WIFI_AP);
@@ -2932,6 +2955,16 @@ void setup()
     delay(10000);
 
     startTaskFirebase();
+    delay(5000);
+
+    xTaskCreatePinnedToCore(
+      taskButtonTouch,        // Function that should be called
+      "Button/Touch Action",  // Name of the task (for debugging)
+      1500,                   // Stack size (bytes)
+      NULL,                   // Parameter to pass
+      1,                      // Task priority
+      &taskButtonTouchHandle, // Task handle
+      CONFIG_ARDUINO_RUNNING_CORE);
     delay(5000);
   }
   // vTaskDelete(NULL);
