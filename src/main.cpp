@@ -2634,7 +2634,7 @@ void listAllFiles()
 //=========================================================================
 void setupDMDNasehat(const char *info)
 {
-  setupDMDAtNowForLifeTime(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, str_date_full, false, info, true, System5x7, 1000, 10000, msDistanceFromNowToTime(23, 59, 0));
+  setupDMDAtNowForLifeTime(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, info, true, str_clock_full, false, System5x7, 1000, 10000, msDistanceFromNowToTime(23, 59, 0));
   setupDMDAtNowForLifeTime(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, str_date_full, false, str_clock_full, false, System5x7, 1000, 10000, msDistanceFromNowToTime(23, 59, 0));
   setupDMDAtNowForLifeTime(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, type_jws, false, count_down_jws, false, System5x7, 1000, 10000, msDistanceFromNowToTime(23, 59, 0));
 }
