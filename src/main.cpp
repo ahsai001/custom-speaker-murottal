@@ -412,6 +412,24 @@ struct DMD_Data
   long long start_time_inMS = 0;    // by code
 };
 
+enum DMD_Data_Line_Type
+{
+  DMD_Data_Line_Type_Init,
+  DMD_Data_Line_Type_Static,
+  DMD_Data_Line_Type_Bounce,
+  DMD_Data_Line_Type_Scroll
+};
+
+struct DMD_Data_Line {
+  DMD_Data_Line_Type type = DMD_Data_Line_Type_Init;
+  int width = -1;
+  int8_t step = 0;
+  int8_t posY = 0;
+  int posX = 0;
+  bool message_full_displayed = false;
+  unsigned long start = 0;
+};
+
 bool need_reset_dmd_loop_index = false;
 bool allowed_dmd_loop = true;
 
@@ -830,40 +848,34 @@ void anim_out(DMD_Data *item)
   }
 }
 
-void showStaticMessage(DMD_Data * item, unsigned long * start, const char * text, int8_t posY){
-  if (millis() - *start > item->delay_inMS)
+void showStaticLine(DMD_Data * item, unsigned long * start, const char * text, int8_t posY){
+  if (millis() - (*start) > item->delay_inMS)
   {
     drawTextCenter(item->font, text, posY);
     *start = millis();
   } 
 }
 
-void showBounceMessage(DMD_Data * item, unsigned long * start, char * text, int8_t posY, int * posX, int * width, int8_t * step, bool * message_full_displayed){
-  if (millis() - *start > marquee_speed)
+void showBounceLine(DMD_Data * item, unsigned long * start, char * text, int8_t posY, int * posX, int * width, int8_t * step, bool * message_full_displayed){
+  if (millis() - (*start) > marquee_speed)
   {
     log("*");
     dmd.drawString(*posX, posY, text, strlen(text), GRAPHICS_NORMAL);
-    *posX += *step;
+    *posX += (*step);
     if (*posX >= ((32 * DISPLAYS_ACROSS) - (*width)))
     {
       *step = -1;
-      *message_full_displayed = true;
     }
     else if (*posX <= 0)
     {
       *step = 1;
-      *message_full_displayed = false;
-    }
-    else
-    {
-      *message_full_displayed = false;
     }
     *start = millis();
   }
 }
 
-void showScrollMessage(DMD_Data * item, unsigned long * start, char * text, int8_t posY, int * posX, int * width, int8_t * step, bool * message_full_displayed){
-  if (millis() - *start > marquee_speed)
+void showScrollLine(DMD_Data * item, unsigned long * start, char * text, int8_t posY, int * posX, int * width, int8_t * step, bool * message_full_displayed){
+  if (millis() - (*start) > marquee_speed)
   {
     log("*");
     dmd.drawString(*posX, posY, text, strlen(text), GRAPHICS_NORMAL);
@@ -872,13 +884,36 @@ void showScrollMessage(DMD_Data * item, unsigned long * start, char * text, int8
       *posX = (32 * DISPLAYS_ACROSS) - 1;
       *message_full_displayed = true;
     }
-    else
-    {
-      *message_full_displayed = false;
-    }
     (*posX)--;
     
     *start = millis();
+  }
+}
+
+
+void showDMDDataLine(DMD_Data * item, char * text, DMD_Data_Line * line){
+  if(line->type == DMD_Data_Line_Type_Static){
+    showStaticLine(item, &line->start,text, line->posY);
+  } else if(line->type == DMD_Data_Line_Type_Bounce){
+    showBounceLine(item, &line->start, text, line->posY, &line->posX, &line->width, &line->step, &line->message_full_displayed);
+  } else if(line->type == DMD_Data_Line_Type_Scroll){
+    showScrollLine(item, &line->start, text, line->posY, &line->posX, &line->width, &line->step, &line->message_full_displayed);
+  }
+}
+
+void setupDMDDataLine(DMD_Data_Line * line, DMD_Data_Line_Type type, unsigned long start, int8_t posY, const uint8_t * font, char * text){
+  line->type = type;
+  line->start = start;
+  line->posY = posY;
+  line->width = stringWidth(font, text);
+  line->step = 1;
+  line->posX = 0;
+  line->message_full_displayed = true;
+  if (line->width > (32 * DISPLAYS_ACROSS))
+  {
+    line->message_full_displayed = false;
+    line->type = DMD_Data_Line_Type_Scroll;
+    line->posX = (32 * DISPLAYS_ACROSS) - 1;
   }
 }
 
@@ -955,74 +990,71 @@ void taskDMD(void *parameter)
         switch (item->type)
         {
         case DMD_TYPE_SCROLL_STATIC:
+        case DMD_TYPE_STATIC_STATIC:
         {
           int counter = item->duration_inMS / item->delay_inMS;
           unsigned long start = millis();
-          unsigned long start2 = start;
           dmd.selectFont(item->font);
 
           //setup line 1
-          int width = stringWidth(item->font, item->text1);
-          int8_t step = 1;
-          bool isBounce = false;
-          int posx = (32 * DISPLAYS_ACROSS) - 1;
-          bool message_full_displayed = false;
-          if (width <= (32 * DISPLAYS_ACROSS))
-          {
-            isBounce = true;
-            posx = 0;
+          struct DMD_Data_Line line1;
+          if(item->type == DMD_TYPE_SCROLL_STATIC){
+            setupDMDDataLine(&line1,DMD_Data_Line_Type_Bounce,start,8,item->font, item->text1);
+          } else {
+            setupDMDDataLine(&line1,DMD_Data_Line_Type_Static,start,8,item->font, item->text1);
           }
 
-
           //setup line 2
+          struct DMD_Data_Line line2;
+          setupDMDDataLine(&line2,DMD_Data_Line_Type_Static,start,0,item->font, item->text2);
 
-          while (counter >= 0 || !message_full_displayed)
+          while (counter >= 0 || !line1.message_full_displayed || !line2.message_full_displayed)
           {
             if (need_reset_dmd_loop_index)
             {
               break;
             }
-
             if (millis() - start > item->delay_inMS)
             {
               counter--;
+              start = millis();
             }
-
-            showStaticMessage(item, &start,item->text2, 0);
-            showScrollMessage(item, &start2, item->text1, 8, &posx, &width, &step, &message_full_displayed);
+            showDMDDataLine(item,item->text1,&line1);
+            showDMDDataLine(item,item->text2,&line2);
           }
         }
         break;
-        case DMD_TYPE_STATIC_STATIC:
-          drawTextCenter(item->font, item->text2, 0);
-          drawTextCenter(item->font, item->text1, 8);
-          delay(item->delay_inMS);
-          break;
         case DMD_TYPE_SCROLL: // single scrolling text
         {
-          dmd.selectFont(item->font);
-          dmd.drawMarquee(item->text1, strlen(item->text1), (32 * DISPLAYS_ACROSS) - 1, 1);
+          int counter = item->duration_inMS / item->delay_inMS;
           unsigned long start = millis();
-          unsigned long start2 = start;
-          boolean ret = false;
-          while (!ret)
+          dmd.selectFont(item->font);
+
+          //setup line 1
+          struct DMD_Data_Line line;
+          setupDMDDataLine(&line,DMD_Data_Line_Type_Bounce,start,1,item->font, item->text1);
+
+          while (counter >= 0 || !line.message_full_displayed)
           {
             if (need_reset_dmd_loop_index)
             {
               break;
             }
-            if ((start2 + marquee_speed) < millis())
+            if (millis() - start > item->delay_inMS)
             {
-              log("*");
-              ret = dmd.stepMarquee(-1, 0);
-              start2 = millis();
+              counter--;
+              start = millis();
             }
+            showDMDDataLine(item,item->text1,&line);
           }
         }
         break;
         case DMD_TYPE_SCROLL_COUNTDOWN: // count down timer
         {
           int counter = item->duration_inMS / item->delay_inMS;
+          unsigned long start = millis();
+          dmd.selectFont(item->font);
+
           int leftSeconds = counter;
           int hours = leftSeconds / 3600;
           int minutes = 0;
@@ -1038,14 +1070,12 @@ void taskDMD(void *parameter)
           }
           seconds = leftSeconds;
 
-          dmd.selectFont(item->font);
 
-          unsigned long start = millis();
-          unsigned long start2 = start;
-          int width = stringWidth(item->font, item->text1);
-          int posx = (32 * DISPLAYS_ACROSS) - 1;
-          bool message_full_displayed = false;
-          while (counter >= 0 || !message_full_displayed)
+          //setup line 1
+          struct DMD_Data_Line line;
+          setupDMDDataLine(&line,DMD_Data_Line_Type_Bounce,start,8,item->font, item->text1);
+
+          while (counter >= 0 || !line.message_full_displayed)
           {
             if (need_reset_dmd_loop_index)
             {
@@ -1072,41 +1102,26 @@ void taskDMD(void *parameter)
               counter--;
               start = millis();
             }
-
-            if (millis() - start2 > marquee_speed)
-            {
-              log("*");
-              dmd.drawString(--posx, 8, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
-              if (posx < (-1 * width))
-              {
-                posx = (32 * DISPLAYS_ACROSS) - 1;
-                message_full_displayed = true;
-              }
-              else
-              {
-                message_full_displayed = false;
-              }
-              start2 = millis();
-            }
+            showDMDDataLine(item,item->text1,&line);
           }
         }
         break;
         case DMD_TYPE_SCROLL_COUNTUP: // count up timer
         {
           int counter = item->duration_inMS / 1000;
+          unsigned long start = millis();
+          dmd.selectFont(item->font);
+          
           int hours = 0;
           int minutes = 0;
           int seconds = 0;
-
-          dmd.selectFont(item->font);
-
-          unsigned long start = millis();
-          unsigned long start2 = start;
-          int width = stringWidth(item->font, item->text1);
-          int posx = (32 * DISPLAYS_ACROSS) - 1;
           int countup = 0;
-          bool message_full_displayed = false;
-          while (countup <= counter || !message_full_displayed)
+
+          //setup line 1
+          struct DMD_Data_Line line;
+          setupDMDDataLine(&line,DMD_Data_Line_Type_Bounce,start,8,item->font, item->text1);
+
+          while (countup <= counter || !line.message_full_displayed)
           {
             if (need_reset_dmd_loop_index)
             {
@@ -1132,22 +1147,8 @@ void taskDMD(void *parameter)
               countup++;
               start = millis();
             }
-
-            if (millis() - start2 > marquee_speed)
-            {
-              log("*");
-              dmd.drawString(--posx, 8, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
-              if (posx < (-1 * width))
-              {
-                posx = (32 * DISPLAYS_ACROSS) - 1;
-                message_full_displayed = true;
-              }
-              else
-              {
-                message_full_displayed = true;
-              }
-              start2 = millis();
-            }
+            
+            showDMDDataLine(item,item->text1,&line);
           }
         }
         break;
