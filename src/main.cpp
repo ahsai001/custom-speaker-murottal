@@ -386,16 +386,17 @@ std::array<uint16_t, 3> getArrayOfDate(const char *date)
 
 enum DMDType
 {
+  DMD_TYPE_INIT,
+  DMD_TYPE_SCROLL,
   DMD_TYPE_SCROLL_STATIC,
   DMD_TYPE_STATIC_STATIC,
-  DMD_TYPE_SCROLL,
   DMD_TYPE_SCROLL_COUNTDOWN,
   DMD_TYPE_SCROLL_COUNTUP
 };
 
 struct DMD_Data
 {
-  int type = -1; // 0:datetime, 1:jws, 2:scrollingtext, 3:countdown, 4:countup
+  DMDType type = DMD_TYPE_INIT;
   char *text1 = NULL;
   uint8_t speed1 = 0;
   bool need_free_text1 = false;
@@ -474,7 +475,7 @@ uint8_t getAvailableDMDIndex(bool isImportant, uint8_t reservedIndex)
     choosenIndex = reservedIndex;
   }
   bool full = false;
-  while (dmd_data_list[choosenIndex].type >= 0 && !full)
+  while (dmd_data_list[choosenIndex].type > DMD_TYPE_INIT && !full)
   {
     choosenIndex++;
     if (choosenIndex >= DMD_DATA_SIZE)
@@ -529,14 +530,14 @@ void resetDMDData(uint8_t index)
 {
   DMD_Data *item = dmd_data_list + index;
   logf("reset 0 %d", index);
-  if (item->type >= 0 && item->need_free_text1)
+  if (item->type > DMD_TYPE_INIT && item->need_free_text1)
   {
     logf("reset 1 %d", index);
     free(item->text1);
     item->text1 = NULL;
     logf("reset 1 end %d", index);
   }
-  if (item->type >= 0 && item->need_free_text2)
+  if (item->type > DMD_TYPE_INIT && item->need_free_text2)
   {
     logf("reset 2 %d", index);
     free(item->text2);
@@ -545,7 +546,7 @@ void resetDMDData(uint8_t index)
   }
 
   logf("reset x end %d", index);
-  item->type = -1;
+  item->type = DMD_TYPE_INIT;
   item->speed1 = 0;
   item->need_free_text1 = false;
   item->speed2 = 0;
@@ -634,8 +635,9 @@ void setupDMD()
   wifi_mode_t mode = WiFi.getMode();
   if (mode == WIFI_MODE_STA)
   {
-    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, str_date_full, false, str_clock_full, false, System5x7, 1000, 15000);
-    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, type_jws, false, count_down_jws, false, System5x7, 1000, 10000);
+    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "bounce", false, "test", false, System5x7, 1000, 10000);
+    //setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, str_date_full, false, str_clock_full, false, System5x7, 1000, 15000);
+    //setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, type_jws, false, count_down_jws, false, System5x7, 1000, 10000);
   }
   else if (mode == WIFI_MODE_AP)
   {
@@ -723,7 +725,7 @@ void anim_in(DMD_Data *item)
   case DMD_TYPE_SCROLL_COUNTUP:
     posy = 0 - 7 - 1;
     old_posy = posy - 1;
-    target = 1;
+    target = 0;
     isText2Done = false;
     break;
   default:
@@ -782,7 +784,7 @@ void anim_out(DMD_Data *item)
   case DMD_TYPE_SCROLL_COUNTDOWN:
   case DMD_TYPE_SCROLL_COUNTUP:
     target = 0 - 7 - 1;
-    posy = 1;
+    posy = 0;
     old_posy = posy + 1;
     isText2Done = false;
     break;
@@ -828,6 +830,58 @@ void anim_out(DMD_Data *item)
   }
 }
 
+void showStaticMessage(DMD_Data * item, unsigned long * start, const char * text, int8_t posY){
+  if (millis() - *start > item->delay_inMS)
+  {
+    drawTextCenter(item->font, text, posY);
+    *start = millis();
+  } 
+}
+
+void showBounceMessage(DMD_Data * item, unsigned long * start, char * text, int8_t posY, int * posX, int * width, int8_t * step, bool * message_full_displayed){
+  if (millis() - *start > marquee_speed)
+  {
+    log("*");
+    dmd.drawString(*posX, posY, text, strlen(text), GRAPHICS_NORMAL);
+    *posX += *step;
+    if (*posX >= ((32 * DISPLAYS_ACROSS) - (*width)))
+    {
+      *step = -1;
+      *message_full_displayed = true;
+    }
+    else if (*posX <= 0)
+    {
+      *step = 1;
+      *message_full_displayed = false;
+    }
+    else
+    {
+      *message_full_displayed = false;
+    }
+    *start = millis();
+  }
+}
+
+void showScrollMessage(DMD_Data * item, unsigned long * start, char * text, int8_t posY, int * posX, int * width, int8_t * step, bool * message_full_displayed){
+  if (millis() - *start > marquee_speed)
+  {
+    log("*");
+    dmd.drawString(*posX, posY, text, strlen(text), GRAPHICS_NORMAL);
+    if (*posX < (-1 * (*width)))
+    {
+      *posX = (32 * DISPLAYS_ACROSS) - 1;
+      *message_full_displayed = true;
+    }
+    else
+    {
+      *message_full_displayed = false;
+    }
+    (*posX)--;
+    
+    *start = millis();
+  }
+}
+
 void taskDMD(void *parameter)
 {
   setupDMD();
@@ -835,7 +889,7 @@ void taskDMD(void *parameter)
   for (;;)
   {
     // byte b;
-    //  10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
+    // 10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
     // dmd.drawBox(0, 0, (32 * DISPLAYS_ACROSS) - 1, (16 * DISPLAYS_DOWN) - 1, GRAPHICS_TOGGLE);
 
     for (dmd_loop_index = 0; dmd_loop_index < DMD_DATA_SIZE && allowed_dmd_loop; dmd_loop_index++)
@@ -849,7 +903,7 @@ void taskDMD(void *parameter)
 
       DMD_Data *item = dmd_data_list + dmd_loop_index;
 
-      if (item->type < 0)
+      if (item->type <= DMD_TYPE_INIT)
       {
         // logln("no type");
         continue;
@@ -906,6 +960,8 @@ void taskDMD(void *parameter)
           unsigned long start = millis();
           unsigned long start2 = start;
           dmd.selectFont(item->font);
+
+          //setup line 1
           int width = stringWidth(item->font, item->text1);
           int8_t step = 1;
           bool isBounce = false;
@@ -916,61 +972,31 @@ void taskDMD(void *parameter)
             isBounce = true;
             posx = 0;
           }
+
+
+          //setup line 2
+
           while (counter >= 0 || !message_full_displayed)
           {
             if (need_reset_dmd_loop_index)
             {
               break;
             }
+
             if (millis() - start > item->delay_inMS)
             {
-              drawTextCenter(item->font, item->text2, 1);
-              start = millis();
               counter--;
             }
-            if (millis() - start2 > marquee_speed)
-            {
-              log("*");
-              dmd.drawString(posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
-              if (isBounce)
-              {
-                posx += step;
-                if (posx >= ((32 * DISPLAYS_ACROSS) - width))
-                {
-                  step = -1;
-                  message_full_displayed = true;
-                }
-                else if (posx <= 0)
-                {
-                  step = 1;
-                  message_full_displayed = false;
-                }
-                else
-                {
-                  message_full_displayed = false;
-                }
-              }
-              else
-              {
-                if (posx < (-1 * width))
-                {
-                  posx = (32 * DISPLAYS_ACROSS) - 1;
-                  message_full_displayed = true;
-                }
-                else
-                {
-                  message_full_displayed = false;
-                }
-                posx--;
-              }
-              start2 = millis();
-            }
+
+            showStaticMessage(item, &start,item->text2, 0);
+            showScrollMessage(item, &start2, item->text1, 8, &posx, &width, &step, &message_full_displayed);
           }
         }
         break;
         case DMD_TYPE_STATIC_STATIC:
-          drawTextCenter(item->font, item->text2, 1);
-          drawTextCenter(item->font, item->text1, 9);
+          drawTextCenter(item->font, item->text2, 0);
+          drawTextCenter(item->font, item->text1, 8);
+          delay(item->delay_inMS);
           break;
         case DMD_TYPE_SCROLL: // single scrolling text
         {
@@ -1041,7 +1067,7 @@ void taskDMD(void *parameter)
               // display
               char count_down[9];
               sprintf_P(count_down, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-              drawTextCenter(item->font, count_down, 1);
+              drawTextCenter(item->font, count_down, 0);
               seconds--;
               counter--;
               start = millis();
@@ -1050,7 +1076,7 @@ void taskDMD(void *parameter)
             if (millis() - start2 > marquee_speed)
             {
               log("*");
-              dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
+              dmd.drawString(--posx, 8, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
               if (posx < (-1 * width))
               {
                 posx = (32 * DISPLAYS_ACROSS) - 1;
@@ -1101,7 +1127,7 @@ void taskDMD(void *parameter)
               // display
               char count_up[9];
               sprintf_P(count_up, (PGM_P)F("%02d:%02d:%02d"), hours, minutes, seconds);
-              drawTextCenter(item->font, count_up, 1);
+              drawTextCenter(item->font, count_up, 0);
               seconds++;
               countup++;
               start = millis();
@@ -1110,7 +1136,7 @@ void taskDMD(void *parameter)
             if (millis() - start2 > marquee_speed)
             {
               log("*");
-              dmd.drawString(--posx, 9, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
+              dmd.drawString(--posx, 8, item->text1, strlen(item->text1), GRAPHICS_NORMAL);
               if (posx < (-1 * width))
               {
                 posx = (32 * DISPLAYS_ACROSS) - 1;
@@ -1128,8 +1154,7 @@ void taskDMD(void *parameter)
         default:
           break;
         }
-        logln("*");
-        delay(item->delay_inMS);
+        logln("===");
       } // end while
       anim_out(item);
     } // end for
@@ -2243,11 +2268,11 @@ void taskDate(void *parameter)
         }
         else if (weekday == 4)
         {
-          setupDMDAtExactRangeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat", false, "Ayo Ayo ayo", false, System5x7, 1000, 5000, 0, "18:30:00", 1, "17:30:00");
+          setupDMDAtExactRangeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat", false, "Info", false, System5x7, 1000, 5000, 0, "18:30:00", 1, "17:30:00");
         }
         else if (weekday == 5)
         {
-          setupDMDAtExactRangeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat", false, "Ayo Ayo ayo", false, System5x7, 1000, 5000, 0, "00:01:00", 0, "17:30:00");
+          setupDMDAtExactRangeTime(true, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "Waktunya Al Kahfi, Sholawat Nabi, Doa penghujung jumat", false, "Info", false, System5x7, 1000, 5000, 0, "00:01:00", 0, "17:30:00");
         }
 
         if (hijri_day == 12 || hijri_day == 13 || hijri_day == 14)
