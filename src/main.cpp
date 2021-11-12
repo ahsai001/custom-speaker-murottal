@@ -653,9 +653,10 @@ void setupDMD()
   wifi_mode_t mode = WiFi.getMode();
   if (mode == WIFI_MODE_STA)
   {
-    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, "bounce", false, "test", false, System5x7, 1000, 10000);
-    //setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, str_date_full, false, str_clock_full, false, System5x7, 1000, 15000);
-    //setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, type_jws, false, count_down_jws, false, System5x7, 1000, 10000);
+    //setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_COUNTUP, "up up up", false, "test", false, System5x7, 1000, 10000);
+    //setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_COUNTDOWN, "down down down", false, "test", false, System5x7, 1000, 10000);
+    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, str_date_full, false, str_clock_full, false, System5x7, 1000, 15000);
+    setupDMDAtNowForever(false, DMD_DATA_FREE_INDEX, DMD_TYPE_SCROLL_STATIC, type_jws, false, count_down_jws, false, System5x7, 1000, 10000);
   }
   else if (mode == WIFI_MODE_AP)
   {
@@ -1147,7 +1148,7 @@ void taskDMD(void *parameter)
               countup++;
               start = millis();
             }
-            
+
             showDMDDataLine(item,item->text1,&line);
           }
         }
